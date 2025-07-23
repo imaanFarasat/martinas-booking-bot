@@ -25,10 +25,11 @@ logger.info(f"Starting main bot with token: {BOT_TOKEN[:10]}...")
 def start_admin_bot():
     """Start the admin bot"""
     try:
+        import asyncio
         from bot_async import StaffSchedulerBot
         bot = StaffSchedulerBot()
         logger.info("Main bot created successfully")
-        bot.run()
+        asyncio.run(bot.run_async())
     except Exception as e:
         logger.error(f"Error starting main bot: {e}")
         sys.exit(1)

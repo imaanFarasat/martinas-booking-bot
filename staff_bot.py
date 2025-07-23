@@ -353,7 +353,8 @@ class StaffBot:
                     CallbackQueryHandler(self.handle_schedule_view)
                 ]
             },
-            fallbacks=[CommandHandler("start", self.start)]
+            fallbacks=[CommandHandler("start", self.start)],
+            per_message=True
         )
         
         application.add_handler(conv_handler)
