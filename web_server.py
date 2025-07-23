@@ -6,7 +6,6 @@ import os
 import threading
 import time
 from flask import Flask, render_template_string
-from bot_async import StaffSchedulerBot
 
 app = Flask(__name__)
 
@@ -42,8 +41,9 @@ HTML_TEMPLATE = """
 def run_bot():
     """Run the bot in a separate thread"""
     try:
-        bot = StaffSchedulerBot()
-        bot.run()
+        # Import and run the main bot
+        import main_start
+        print("Bot started successfully in background thread")
     except Exception as e:
         print(f"Bot error: {e}")
 
