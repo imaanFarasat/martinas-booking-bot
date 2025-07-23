@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+"""
+Simplified staff bot that runs without threading issues
+"""
 import logging
 import os
 import sqlite3
@@ -5,7 +9,7 @@ from datetime import datetime, timedelta
 import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    CommandHandler, CallbackQueryHandler, ConversationHandler
+    CommandHandler, CallbackQueryHandler, ConversationHandler, Application
 )
 from telegram.constants import ParseMode
 
@@ -61,7 +65,6 @@ class DatabaseManager:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
-            # Get schedule data
             cursor.execute('''
                 SELECT day_of_week, is_working, start_time, end_time
                 FROM schedules 
@@ -81,7 +84,6 @@ class DatabaseManager:
             schedule_data = cursor.fetchall()
             conn.close()
             
-            # Convert to dictionary format
             schedule = {}
             for day, is_working, start_time, end_time in schedule_data:
                 schedule[day] = {
@@ -96,7 +98,7 @@ class DatabaseManager:
             logger.error(f"Error getting schedule: {e}")
             return {}
 
-class StaffBot:
+class SimpleStaffBot:
     def __init__(self):
         self.db = DatabaseManager()
         self.toronto_tz = pytz.timezone('America/Toronto')
@@ -110,7 +112,6 @@ class StaffBot:
         """Start command handler"""
         logger.info(f"Staff bot started by user: {update.effective_user.id}")
         
-        # Get all staff members
         staff_list = self.db.get_all_staff()
         
         if not staff_list:
@@ -120,7 +121,6 @@ class StaffBot:
             )
             return ConversationHandler.END
         
-        # Create keyboard with staff names
         keyboard = []
         for staff_id, name in staff_list:
             keyboard.append([InlineKeyboardButton(name, callback_data=f"staff_{staff_id}")])
@@ -143,7 +143,6 @@ class StaffBot:
         await query.answer()
         
         if query.data == "refresh_staff":
-            # Refresh staff list
             staff_list = self.db.get_all_staff()
             
             if not staff_list:
@@ -180,7 +179,6 @@ class StaffBot:
             context.user_data['current_staff_id'] = staff_id
             context.user_data['current_staff_name'] = staff_name
             
-            # Get staff schedule
             schedule = self.db.get_staff_schedule(staff_id)
             
             if not schedule:
@@ -199,7 +197,6 @@ class StaffBot:
                 )
                 return VIEW_SCHEDULE
             
-            # Display schedule
             schedule_text = self.format_schedule(schedule, staff_name)
             
             keyboard = [
@@ -222,7 +219,6 @@ class StaffBot:
         await query.answer()
         
         if query.data == "back_to_staff_list":
-            # Go back to staff selection
             staff_list = self.db.get_all_staff()
             
             keyboard = []
@@ -241,7 +237,6 @@ class StaffBot:
             return SELECT_STAFF
         
         elif query.data.startswith("staff_"):
-            # Refresh current staff schedule
             staff_id = int(query.data.split("_")[1])
             staff_info = self.db.get_staff_by_id(staff_id)
             
@@ -288,7 +283,6 @@ class StaffBot:
         """Format schedule for display"""
         days_of_week = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
         
-        # Calculate current week dates
         now = datetime.now(self.toronto_tz)
         days_since_sunday = now.weekday() + 1
         if days_since_sunday == 7:
@@ -326,23 +320,13 @@ class StaffBot:
         
         return text
     
-    def run(self):
-        """Run the bot (synchronous version)"""
-        import asyncio
-        asyncio.run(self.run_async())
-    
-    async def run_async(self):
-        """Run the bot (asynchronous version)"""
-        logger.info("Starting staff bot...")
+    async def run(self):
+        """Run the bot"""
+        logger.info("Starting simple staff bot...")
         logger.info(f"Using database: {DATABASE_PATH}")
         
-        # Create application using Application class (newer API pattern)
-        from telegram.ext import Application
-        
-        # Create application
         application = Application.builder().token(self.token).build()
         
-        # Create conversation handler
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler("start", self.start)],
             states={
@@ -358,19 +342,16 @@ class StaffBot:
         
         application.add_handler(conv_handler)
         
-        # Start the bot with signal handling completely disabled for threading
         logger.info("Staff bot is starting...")
         await application.updater.start_polling(drop_pending_updates=True, allowed_updates=None)
 
 if __name__ == "__main__":
     try:
-        logger.info("Initializing staff bot...")
-        bot = StaffBot()
-        logger.info("Staff bot initialized successfully")
-        bot.run()
+        import asyncio
+        bot = SimpleStaffBot()
+        asyncio.run(bot.run())
     except Exception as e:
         logger.error(f"Error starting staff bot: {e}")
         import traceback
         traceback.print_exc()
-        # Exit with error code for Render to detect failure
         exit(1) 
