@@ -3,7 +3,6 @@
 Simple web server to keep the bot running on Render
 """
 import os
-import threading
 import time
 from flask import Flask, render_template_string
 
@@ -38,15 +37,6 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def run_bot():
-    """Run the bot in a separate thread"""
-    try:
-        # Import and run the main bot
-        import main_start
-        print("Bot started successfully in background thread")
-    except Exception as e:
-        print(f"Bot error: {e}")
-
 @app.route('/')
 def home():
     """Home page showing bot status"""
@@ -58,15 +48,11 @@ def health():
     return {"status": "healthy", "bot": "running"}
 
 if __name__ == "__main__":
-    # Start the bot in a separate thread
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
     # Get port from environment (Render sets this)
     port = int(os.environ.get('PORT', 10000))
     
     print(f"Starting web server on port {port}")
-    print("Bot is running in background thread")
+    print("Bot will be started separately")
     
     # Run the Flask app
     app.run(host='0.0.0.0', port=port, debug=False) 
