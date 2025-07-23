@@ -25,7 +25,7 @@ MAX_END_TIME = "21:00"
 DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 # Database - Use environment variable for shared database on Render
-DATABASE_PATH = os.getenv('DATABASE_PATH', 'staff_scheduler.db')
+DATABASE_PATH = os.getenv('DATABASE_PATH', 'shared_scheduler.db')
 
 # PDF Settings
 PDF_FILENAME = 'weekly_schedule.pdf'
