@@ -1965,7 +1965,12 @@ class StaffSchedulerBot:
         return await self.show_schedule_input_form(update, context)
     
     def run(self):
-        """Run the bot"""
+        """Run the bot (synchronous version)"""
+        import asyncio
+        asyncio.run(self.run_async())
+    
+    async def run_async(self):
+        """Run the bot (asynchronous version)"""
         application = Application.builder().token(BOT_TOKEN).build()
         
         # Create conversation handler
@@ -2007,7 +2012,7 @@ class StaffSchedulerBot:
         application.add_handler(conv_handler)
         
         # Start the bot
-        application.run_polling()
+        await application.run_polling()
     
     async def edit_next_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Move to edit the next day in the schedule"""

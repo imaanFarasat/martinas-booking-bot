@@ -17,8 +17,20 @@ def health():
 def start_admin_bot():
     """Start the admin bot in a separate thread"""
     try:
-        from main_start import start_admin_bot
-        start_admin_bot()
+        import asyncio
+        import nest_asyncio
+        
+        # Enable nested event loops
+        nest_asyncio.apply()
+        
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        from bot_async import StaffSchedulerBot
+        bot = StaffSchedulerBot()
+        # Run the bot in the event loop
+        loop.run_until_complete(bot.run_async())
     except Exception as e:
         print(f"Error starting admin bot: {e}")
 
