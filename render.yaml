@@ -10,6 +10,8 @@ services:
         sync: false
       - key: ADMIN_IDS
         sync: false
+      - key: STAFF_BOT_TOKEN
+        sync: false
       - key: DATABASE_PATH
         value: /opt/render/project/src/shared_scheduler.db
       - key: PYTHON_VERSION

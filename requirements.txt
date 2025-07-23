@@ -2,4 +2,5 @@ python-telegram-bot==21.7
 pytz
 reportlab
 python-dotenv
-flask 
+flask
+nest-asyncio 
