@@ -16,8 +16,11 @@ def health():
 
 def start_admin_bot():
     """Start the admin bot in a separate thread"""
-    from main_start import start_admin_bot
-    start_admin_bot()
+    try:
+        from main_start import start_admin_bot
+        start_admin_bot()
+    except Exception as e:
+        print(f"Error starting admin bot: {e}")
 
 def start_staff_bot():
     """Start the staff bot in a separate thread"""
@@ -33,7 +36,8 @@ def start_staff_bot():
         asyncio.set_event_loop(loop)
         
         staff_bot = StaffBot()
-        staff_bot.run()
+        # Run the bot in the event loop
+        loop.run_until_complete(staff_bot.run_async())
     except Exception as e:
         print(f"Error starting staff bot: {e}")
 

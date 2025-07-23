@@ -327,7 +327,12 @@ class StaffBot:
         return text
     
     def run(self):
-        """Run the bot"""
+        """Run the bot (synchronous version)"""
+        import asyncio
+        asyncio.run(self.run_async())
+    
+    async def run_async(self):
+        """Run the bot (asynchronous version)"""
         logger.info("Starting staff bot...")
         logger.info(f"Using database: {DATABASE_PATH}")
         
@@ -355,7 +360,7 @@ class StaffBot:
         
         # Start the bot
         logger.info("Staff bot is starting...")
-        application.run_polling()
+        await application.run_polling()
 
 if __name__ == "__main__":
     try:
