@@ -353,15 +353,14 @@ class StaffBot:
                     CallbackQueryHandler(self.handle_schedule_view)
                 ]
             },
-            fallbacks=[CommandHandler("start", self.start)],
-            per_message=True
+            fallbacks=[CommandHandler("start", self.start)]
         )
         
         application.add_handler(conv_handler)
         
-        # Start the bot
+        # Start the bot with signal handling disabled for threading
         logger.info("Staff bot is starting...")
-        await application.run_polling()
+        await application.run_polling(drop_pending_updates=True, allowed_updates=None, close_loop=False)
 
 if __name__ == "__main__":
     try:
