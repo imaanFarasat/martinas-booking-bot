@@ -2011,7 +2011,8 @@ class StaffSchedulerBot:
         
         application.add_handler(conv_handler)
         
-        # Start the bot with signal handling completely disabled for threading
+        # Start the bot with proper initialization
+        await application.initialize()
         await application.updater.start_polling(drop_pending_updates=True, allowed_updates=None)
     
     async def edit_next_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE):

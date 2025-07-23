@@ -358,8 +358,9 @@ class StaffBot:
         
         application.add_handler(conv_handler)
         
-        # Start the bot with signal handling completely disabled for threading
+        # Start the bot with proper initialization
         logger.info("Staff bot is starting...")
+        await application.initialize()
         await application.updater.start_polling(drop_pending_updates=True, allowed_updates=None)
 
 if __name__ == "__main__":

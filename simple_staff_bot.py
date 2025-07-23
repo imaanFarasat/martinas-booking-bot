@@ -343,6 +343,7 @@ class SimpleStaffBot:
         application.add_handler(conv_handler)
         
         logger.info("Staff bot is starting...")
+        await application.initialize()
         await application.updater.start_polling(drop_pending_updates=True, allowed_updates=None)
 
 if __name__ == "__main__":
