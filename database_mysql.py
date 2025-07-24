@@ -202,12 +202,19 @@ class MySQLDatabaseManager:
         cursor = conn.cursor()
         
         try:
-            # Get existing schedule data for logging
-            cursor.execute('''
-                SELECT is_working, start_time, end_time 
-                FROM schedules 
-                WHERE staff_id = %s AND day_of_week = %s
-            ''', (staff_id, day_of_week))
+            # Get existing schedule data for logging (include schedule_date in WHERE clause)
+            if schedule_date:
+                cursor.execute('''
+                    SELECT is_working, start_time, end_time 
+                    FROM schedules 
+                    WHERE staff_id = %s AND day_of_week = %s AND schedule_date = %s
+                ''', (staff_id, day_of_week, schedule_date))
+            else:
+                cursor.execute('''
+                    SELECT is_working, start_time, end_time 
+                    FROM schedules 
+                    WHERE staff_id = %s AND day_of_week = %s AND schedule_date IS NULL
+                ''', (staff_id, day_of_week))
             existing = cursor.fetchone()
             
             # Consume any remaining results
@@ -221,19 +228,32 @@ class MySQLDatabaseManager:
                 'schedule_date': str(schedule_date) if schedule_date else None
             }
             
-            # Log the change
+            # Log the change with proper old/new data comparison
             if existing:
                 old_data = {
                     'is_working': existing[0],
                     'start_time': str(existing[1]) if existing[1] else None,
-                    'end_time': str(existing[2]) if existing[2] else None
+                    'end_time': str(existing[2]) if existing[2] else None,
+                    'schedule_date': str(schedule_date) if schedule_date else None
                 }
                 action = 'UPDATE_SCHEDULE'
+                
+                # Check if there's actually a change
+                has_changes = (
+                    old_data['is_working'] != new_data['is_working'] or
+                    old_data['start_time'] != new_data['start_time'] or
+                    old_data['end_time'] != new_data['end_time']
+                )
+                
+                if not has_changes:
+                    # No changes detected, don't log
+                    conn.commit()
+                    return True
             else:
                 old_data = None
                 action = 'ADD_SCHEDULE'
             
-            # Use REPLACE INTO for MySQL (equivalent to INSERT OR REPLACE in SQLite)
+            # REPLACE INTO ensures the latest save replaces any existing data
             cursor.execute('''
                 REPLACE INTO schedules 
                 (staff_id, day_of_week, schedule_date, is_working, start_time, end_time)
@@ -243,7 +263,7 @@ class MySQLDatabaseManager:
             # Consume any remaining results
             cursor.fetchall()
             
-            # Log the schedule change
+            # Log the schedule change with timestamp
             cursor.execute('''
                 INSERT INTO schedule_changes (staff_id, action, day_of_week, old_data, new_data, changed_by)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -267,9 +287,11 @@ class MySQLDatabaseManager:
         staff_name = staff_name[1] if staff_name else "Unknown"
         
         if existing:
-            logger.info(f"Schedule updated for '{staff_name}' on {day_of_week}")
+            logger.info(f"Schedule updated for '{staff_name}' on {day_of_week}: {start_time}-{end_time}")
         else:
-            logger.info(f"Schedule added for '{staff_name}' on {day_of_week}")
+            logger.info(f"Schedule added for '{staff_name}' on {day_of_week}: {start_time}-{end_time}")
+        
+        return True
     
     def get_staff_schedule(self, staff_id):
         """Get complete schedule for a staff member"""
@@ -329,156 +351,15 @@ class MySQLDatabaseManager:
         conn.close()
         return staff_without_schedules
     
-    def reset_all_schedules(self):
-        """Reset all schedules - clear all schedule data"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Clear all schedules
-        cursor.execute('DELETE FROM schedules')
-        
-        conn.commit()
-        conn.close()
-        
-        return True
-    
-    def get_schedule_history(self):
-        """Get all historical schedules grouped by week dates"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Get all unique dates
-        cursor.execute('''
-            SELECT DISTINCT schedule_date, day_of_week
-            FROM schedules 
-            WHERE schedule_date IS NOT NULL
-            ORDER BY schedule_date DESC, FIELD(day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
-        ''')
-        dates = cursor.fetchall()
-        
-        # Group by week
-        week_schedules = {}
-        for schedule_date, day_of_week in dates:
-            if schedule_date:
-                # Find the Sunday of this week
-                date_obj = schedule_date
-                days_since_sunday = date_obj.weekday() + 1  # Monday=0, so Sunday=6, but we want Sunday=0
-                if days_since_sunday == 7:
-                    days_since_sunday = 0
-                week_start = date_obj - timedelta(days=days_since_sunday)
-                
-                week_key = week_start.strftime('%Y-%m-%d')
-                if week_key not in week_schedules:
-                    week_schedules[week_key] = {
-                        'week_start': week_start,
-                        'schedules': []
-                    }
-        
-        # Get full schedule data for each week
-        for week_key, week_info in week_schedules.items():
-            week_start = week_info['week_start']
-            week_end = week_start + timedelta(days=6)
-            
-            cursor.execute('''
-                SELECT s.name, sch.day_of_week, sch.schedule_date, sch.is_working, sch.start_time, sch.end_time
-                FROM staff s
-                LEFT JOIN schedules sch ON s.id = sch.staff_id
-                WHERE sch.schedule_date BETWEEN %s AND %s
-                ORDER BY s.name, FIELD(sch.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
-            ''', (week_start.strftime('%Y-%m-%d'), week_end.strftime('%Y-%m-%d')))
-            
-            week_info['schedules'] = cursor.fetchall()
-        
-        conn.close()
-        return week_schedules
-    
-    def get_staff_schedule_for_week(self, staff_id, week_start):
-        """Get a specific staff member's schedule for a week"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        week_end = week_start + timedelta(days=6)
-        
-        cursor.execute('''
-            SELECT day_of_week, schedule_date, is_working, start_time, end_time
-            FROM schedules
-            WHERE staff_id = %s AND schedule_date BETWEEN %s AND %s
-            ORDER BY FIELD(day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
-        ''', (staff_id, week_start.strftime('%Y-%m-%d'), week_end.strftime('%Y-%m-%d')))
-        
-        schedules = cursor.fetchall()
-        conn.close()
-        
-        # Convert to dictionary format
-        schedule_dict = {}
-        for day, schedule_date, is_working, start_time, end_time in schedules:
-            schedule_dict[day] = {
-                'schedule_date': schedule_date,
-                'is_working': is_working,
-                'start_time': start_time,
-                'end_time': end_time
-            }
-        
-        return schedule_dict
-    
-    def get_staff_schedule_history(self, staff_id):
-        """Get historical schedules for a specific staff member"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT DISTINCT schedule_date, day_of_week
-            FROM schedules 
-            WHERE staff_id = %s AND schedule_date IS NOT NULL
-            ORDER BY schedule_date DESC, FIELD(day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
-        ''', (staff_id,))
-        
-        dates = cursor.fetchall()
-        
-        # Group by week
-        week_schedules = {}
-        for schedule_date, day_of_week in dates:
-            if schedule_date:
-                # Find the Sunday of this week
-                date_obj = schedule_date
-                days_since_sunday = date_obj.weekday() + 1  # Monday=0, so Sunday=6, but we want Sunday=0
-                if days_since_sunday == 7:
-                    days_since_sunday = 0
-                week_start = date_obj - timedelta(days=days_since_sunday)
-                
-                week_key = week_start.strftime('%Y-%m-%d')
-                if week_key not in week_schedules:
-                    week_schedules[week_key] = {
-                        'week_start': week_start,
-                        'schedules': []
-                    }
-        
-        # Get full schedule data for each week
-        for week_key, week_info in week_schedules.items():
-            week_start = week_info['week_start']
-            week_end = week_start + timedelta(days=6)
-            
-            cursor.execute('''
-                SELECT s.name, sch.day_of_week, sch.schedule_date, sch.is_working, sch.start_time, sch.end_time
-                FROM staff s
-                LEFT JOIN schedules sch ON s.id = sch.staff_id
-                WHERE s.id = %s AND sch.schedule_date BETWEEN %s AND %s
-                ORDER BY FIELD(sch.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
-            ''', (staff_id, week_start.strftime('%Y-%m-%d'), week_end.strftime('%Y-%m-%d')))
-            
-            week_info['schedules'] = cursor.fetchall()
-        
-        conn.close()
-        return week_schedules
-    
     def get_schedule_changes(self, staff_id=None, limit=50):
-        """Get recent schedule changes for tracking modifications"""
+        """Get schedule change history with optional staff filter"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         if staff_id:
             cursor.execute('''
-                SELECT sc.id, s.name, sc.action, sc.day_of_week, sc.old_data, sc.new_data, sc.changed_by, sc.changed_at
+                SELECT sc.id, s.name, sc.action, sc.day_of_week, 
+                       sc.old_data, sc.new_data, sc.changed_by, sc.changed_at
                 FROM schedule_changes sc
                 LEFT JOIN staff s ON sc.staff_id = s.id
                 WHERE sc.staff_id = %s
@@ -487,7 +368,8 @@ class MySQLDatabaseManager:
             ''', (staff_id, limit))
         else:
             cursor.execute('''
-                SELECT sc.id, s.name, sc.action, sc.day_of_week, sc.old_data, sc.new_data, sc.changed_by, sc.changed_at
+                SELECT sc.id, s.name, sc.action, sc.day_of_week, 
+                       sc.old_data, sc.new_data, sc.changed_by, sc.changed_at
                 FROM schedule_changes sc
                 LEFT JOIN staff s ON sc.staff_id = s.id
                 ORDER BY sc.changed_at DESC
@@ -497,6 +379,29 @@ class MySQLDatabaseManager:
         changes = cursor.fetchall()
         conn.close()
         return changes
+    
+    def get_latest_schedule_for_staff(self, staff_id):
+        """Get the most recent schedule for a staff member (what's currently active)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT day_of_week, schedule_date, is_working, start_time, end_time, updated_at
+            FROM schedules
+            WHERE staff_id = %s
+            ORDER BY 
+                CASE day_of_week
+                    WHEN 'Sunday' THEN 1
+                    WHEN 'Monday' THEN 2
+                    WHEN 'Tuesday' THEN 3
+                    WHEN 'Wednesday' THEN 4
+                    WHEN 'Thursday' THEN 5
+                    WHEN 'Friday' THEN 6
+                    WHEN 'Saturday' THEN 7
+                END
+        ''', (staff_id,))
+        schedule = cursor.fetchall()
+        conn.close()
+        return schedule
     
     def get_staff_complete_schedule_status(self):
         """Get status of which staff have complete schedules"""
