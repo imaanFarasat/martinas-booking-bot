@@ -500,6 +500,12 @@ class StaffSchedulerBot:
         context.user_data['schedule_data'] = schedule_data
         print(f"DEBUG: Final schedule_data in context: {schedule_data}")
         
+        # CRITICAL FIX: Initialize week_dates for single-day editing
+        week_dates, week_start = self.calculate_week_dates()
+        context.user_data['week_dates'] = week_dates
+        context.user_data['week_start'] = week_start
+        print(f"DEBUG: Initialized week_dates in show_existing_schedule: {week_dates}")
+        
         # Build display text
         text = f"📅 *{staff_name}'s Current Schedule*\n\n"
         text += "*You already added these times and days:*\n\n"
@@ -1739,39 +1745,61 @@ class StaffSchedulerBot:
             start_time = day_data.get('start_time', '') if is_working else None
             end_time = day_data.get('end_time', '') if is_working else None
             
-            # Don't save if working but missing times
-            if is_working and (not start_time or not end_time):
-                logger.warning(f"save_single_day_edit: {day} is working but missing times - start:{start_time}, end:{end_time}")
+            # Don't save if working but missing times (treat empty strings as missing)
+            if is_working and (not start_time or start_time.strip() == '' or not end_time or end_time.strip() == ''):
+                logger.warning(f"save_single_day_edit: {day} is working but missing times - start:'{start_time}', end:'{end_time}'")
                 return False
             
-            # Get week dates for schedule_date
+            # Get week dates for schedule_date - ensure they exist
             week_dates = context.user_data.get('week_dates', {})
+            if not week_dates:
+                # Initialize week dates if not set
+                week_dates, week_start = self.calculate_week_dates()
+                context.user_data['week_dates'] = week_dates
+                context.user_data['week_start'] = week_start
+                print(f"DEBUG: Initialized week_dates for single day save: {week_dates}")
+            
             schedule_date = week_dates.get(day)
             
             user_id = update.effective_user.id
             
             logger.info(f"SINGLE DAY SAVE: {staff_name} {day} -> working:{is_working}, start:{start_time}, end:{end_time}, date:{schedule_date}")
             print(f"DEBUG: SINGLE DAY SAVE: {staff_name} {day} -> working:{is_working}, start:{start_time}, end:{end_time}")
+            print(f"DEBUG: About to call db.save_schedule with staff_id={staff_id}")
             
             # Save to database
-            success = self.db.save_schedule(
-                staff_id=staff_id,
-                day_of_week=day,
-                is_working=is_working,
-                start_time=start_time,
-                end_time=end_time,
-                schedule_date=schedule_date,
-                changed_by=f"SINGLE_EDIT_{user_id}"
-            )
-            
-            if success:
-                logger.info(f"✅ Single day save successful: {staff_name} {day}")
-                print(f"DEBUG: ✅ Single day save successful: {staff_name} {day}")
-            else:
-                logger.error(f"❌ Single day save failed: {staff_name} {day}")
-                print(f"DEBUG: ❌ Single day save failed: {staff_name} {day}")
-            
-            return success
+            try:
+                success = self.db.save_schedule(
+                    staff_id=staff_id,
+                    day_of_week=day,
+                    is_working=is_working,
+                    start_time=start_time,
+                    end_time=end_time,
+                    schedule_date=schedule_date,
+                    changed_by=f"SINGLE_EDIT_{user_id}"
+                )
+                
+                if success:
+                    logger.info(f"✅ Single day save successful: {staff_name} {day}")
+                    print(f"DEBUG: ✅ Single day save successful: {staff_name} {day}")
+                    
+                    # VERIFICATION: Read back immediately to confirm it saved
+                    print(f"DEBUG: Verifying save by reading fresh data...")
+                    fresh_schedule = self.db.get_staff_schedule(staff_id)
+                    for day_name, is_work, start_t, end_t in fresh_schedule:
+                        if day_name == day:
+                            print(f"DEBUG: VERIFICATION - {day} in DB: working={is_work}, start={start_t}, end={end_t}")
+                            break
+                else:
+                    logger.error(f"❌ Single day save failed: {staff_name} {day}")
+                    print(f"DEBUG: ❌ Single day save failed: {staff_name} {day}")
+                
+                return success
+                
+            except Exception as save_ex:
+                logger.error(f"Exception during db.save_schedule: {save_ex}")
+                print(f"DEBUG: Exception during db.save_schedule: {save_ex}")
+                return False
             
         except Exception as e:
             logger.error(f"Exception in save_single_day_edit for {day}: {e}")
