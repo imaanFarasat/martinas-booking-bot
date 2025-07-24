@@ -51,6 +51,19 @@ class PDFGenerator:
             
             print(f"DEBUG: Processing {len(schedule_data)} records")
             
+            # Initialize all employees with empty schedules first
+            all_employees = set()
+            for record in schedule_data:
+                if len(record) >= 1:
+                    all_employees.add(record[0])  # staff_name
+            
+            # Initialize employee schedules with "Not Set" for all days
+            for employee in all_employees:
+                employee_schedules[employee] = {}
+                for day in days_order:
+                    employee_schedules[employee][day] = "Not Set"
+            
+            # Now fill in the actual schedule data
             for record in schedule_data:
                 print(f"DEBUG: Processing record: {record}")
                 # Handle different record formats
@@ -68,35 +81,12 @@ class PDFGenerator:
                 
                 print(f"DEBUG: Staff name: {staff_name}, Day: {day}, Working: {is_working}")
                 
-                if staff_name not in employee_schedules:
-                    employee_schedules[staff_name] = {}
-                
-                # Format date
-                if week_dates and day in week_dates:
-                    try:
-                        if isinstance(week_dates[day], str):
-                            date_obj = datetime.strptime(week_dates[day], '%Y-%m-%d')
-                        else:
-                            date_obj = week_dates[day]
-                        date_str = date_obj.strftime('%b %d')
-                    except:
-                        date_str = "N/A"
-                elif schedule_date:
-                    try:
-                        if isinstance(schedule_date, str):
-                            date_obj = datetime.strptime(schedule_date, '%Y-%m-%d')
-                        else:
-                            date_obj = schedule_date
-                        date_str = date_obj.strftime('%b %d')
-                    except:
-                        date_str = schedule_date
-                else:
-                    date_str = "N/A"
-                
-                # Format day with date and status
+                # Format day info based on working status
                 if is_working:
-                    time_str = f"{start_time}-{end_time}" if start_time and end_time else "Not set"
-                    day_info = time_str
+                    if start_time and end_time and start_time.strip() and end_time.strip():
+                        day_info = f"{start_time.strip()}-{end_time.strip()}"
+                    else:
+                        day_info = "Working (Times Not Set)"
                 else:
                     day_info = "Off"
                 
@@ -124,18 +114,21 @@ class PDFGenerator:
             if not employee_schedules:
                 table_data.append(['No schedules found'] + [''] * 8)  # 7 days + 1 total hours column
             else:
-                for employee, schedule in employee_schedules.items():
+                for employee, schedule in sorted(employee_schedules.items()):  # Sort by employee name
                     print(f"DEBUG: Adding employee row for: {employee}")
                     row = [employee]
                     total_hours = 0
                     
                     for day in days_order:
-                        day_value = schedule.get(day, f"{day} - Not set")
+                        day_value = schedule.get(day, "Not Set")
                         row.append(day_value)
                         print(f"DEBUG: {day}: {day_value}")
                         
-                        # Calculate hours for this day
-                        if day_value != "Off" and "-" in day_value and "Not set" not in day_value:
+                        # Calculate hours for this day - improved logic
+                        if (day_value != "Off" and 
+                            day_value != "Not Set" and 
+                            day_value != "Working (Times Not Set)" and 
+                            "-" in day_value):
                             try:
                                 # Extract start and end times (format: "09:00-17:00")
                                 times = day_value.split("-")
@@ -143,34 +136,46 @@ class PDFGenerator:
                                     start_time = times[0].strip()
                                     end_time = times[1].strip()
                                     
-                                    # Convert to datetime objects for calculation
-                                    start_dt = datetime.strptime(start_time, "%H:%M")
-                                    end_dt = datetime.strptime(end_time, "%H:%M")
-                                    
-                                    # Calculate hours difference
-                                    time_diff = end_dt - start_dt
-                                    hours = time_diff.total_seconds() / 3600
-                                    
-                                    # Handle overnight shifts (negative hours)
-                                    if hours < 0:
-                                        hours += 24
-                                    
-                                    total_hours += hours
+                                    # Validate time format (HH:MM)
+                                    if ":" in start_time and ":" in end_time:
+                                        # Convert to datetime objects for calculation
+                                        start_dt = datetime.strptime(start_time, "%H:%M")
+                                        end_dt = datetime.strptime(end_time, "%H:%M")
+                                        
+                                        # Calculate hours difference
+                                        time_diff = end_dt - start_dt
+                                        hours = time_diff.total_seconds() / 3600
+                                        
+                                        # Handle overnight shifts (negative hours)
+                                        if hours < 0:
+                                            hours += 24
+                                        
+                                        # Only add positive, reasonable hours (0-24)
+                                        if 0 <= hours <= 24:
+                                            total_hours += hours
+                                        
+                                        print(f"DEBUG: {day} hours calculated: {hours:.1f} (total now: {total_hours:.1f})")
+                                    else:
+                                        print(f"DEBUG: Invalid time format in '{day_value}' - no colons found")
+                                else:
+                                    print(f"DEBUG: Could not split '{day_value}' into 2 time parts")
                             except Exception as e:
-                                print(f"DEBUG: Error calculating hours for {day_value}: {e}")
+                                print(f"DEBUG: Error calculating hours for '{day_value}': {e}")
                                 # Don't add any hours for invalid time formats
                     
-                    # Add total hours to the row
-                    row.append(f"{total_hours:.1f}")
+                    # Add total hours to the row (format to 1 decimal place)
+                    row.append(f"{total_hours:.1f}h")
                     table_data.append(row)
+                    print(f"DEBUG: {employee} total hours: {total_hours:.1f}")
             
             print(f"DEBUG: Final table data: {table_data}")
             
             # Create table
             table = Table(table_data)
             
-            # Create a very light red color for "Off" cells
-            very_light_red = colors.Color(1.0, 0.95, 0.95)  # Very light red
+            # Create color scheme
+            very_light_red = colors.Color(1.0, 0.95, 0.95)  # Very light red for "Off"
+            very_light_yellow = colors.Color(1.0, 1.0, 0.9)  # Very light yellow for "Not Set"
             
             # Base table style
             table_style = [
@@ -212,15 +217,39 @@ class PDFGenerator:
                 ('WORDWRAP', (0, 0), (-1, -1), True),
             ]
             
-            # Add conditional styling for "Off" cells
+            # Add conditional styling for different cell values
             for row_idx, row in enumerate(table_data[1:], 1):  # Skip header row
-                for col_idx, cell_value in enumerate(row[1:-1], 1):  # Skip employee name column and Total Hours column
+                for col_idx, cell_value in enumerate(row[1:-1], 1):  # Skip employee name and Total Hours columns
                     if cell_value == "Off":
                         table_style.append(('BACKGROUND', (col_idx, row_idx), (col_idx, row_idx), very_light_red))
+                    elif cell_value == "Not Set":
+                        table_style.append(('BACKGROUND', (col_idx, row_idx), (col_idx, row_idx), very_light_yellow))
+                    elif "Working (Times Not Set)" in cell_value:
+                        table_style.append(('BACKGROUND', (col_idx, row_idx), (col_idx, row_idx), very_light_yellow))
             
             table.setStyle(TableStyle(table_style))
             
             elements.append(table)
+            
+            elements.append(Spacer(1, 20))
+            
+            # Add legend
+            legend_style = ParagraphStyle(
+                'Legend',
+                parent=getSampleStyleSheet()['Normal'],
+                fontSize=9,
+                leftIndent=0.5*inch
+            )
+            legend_text = """
+            <b>Legend:</b><br/>
+            • <b>Working Times:</b> Shows start-end times (e.g., 09:00-17:00)<br/>
+            • <b>Off:</b> Staff member is not working this day<br/>
+            • <b>Not Set:</b> Schedule not yet configured for this day<br/>
+            • <b>Working (Times Not Set):</b> Marked as working but times not specified<br/>
+            • <b>Total Hours:</b> Sum of all working hours for the week
+            """
+            legend = Paragraph(legend_text, legend_style)
+            elements.append(legend)
             
             # Build PDF
             doc.build(elements)

@@ -2274,31 +2274,19 @@ class StaffSchedulerBot:
             )
             return MAIN_MENU
         
-        # Check if all staff have complete schedules
+        # Check if all staff have complete schedules - for information only, don't filter
         staff_without_schedules = self.db.get_staff_without_complete_schedules()
         warning_message = ""
-        filtered_schedules = schedules
         
         if staff_without_schedules:
             missing_staff = [name for _, name, _ in staff_without_schedules]
-            warning_message = f"\n\n⚠️ *WARNING: The following staff members don't have complete schedules:*\n"
+            warning_message = f"\n\n📋 *INFO: Partial schedules included for:*\n"
             warning_message += f"{chr(10).join([f'• {name}' for name in missing_staff])}\n"
-            warning_message += f"\nThe PDF will be generated with available schedules only."
-            
-            # Filter out staff without complete schedules from PDF data
-            staff_with_complete_schedules = self.db.get_staff_with_complete_schedules()
-            complete_staff_names = {name for _, name, _ in staff_with_complete_schedules}
-            
-            filtered_schedules = [
-                schedule for schedule in schedules 
-                if schedule[0] in complete_staff_names  # schedule[0] is staff_name
-            ]
-            
-            print(f"DEBUG: Filtered schedules from {len(schedules)} to {len(filtered_schedules)} records")
+            warning_message += f"\nPDF will show all available schedules (including incomplete ones)."
         
-        # Generate PDF
+        # Generate PDF with ALL schedules (no filtering)
         try:
-            print(f"DEBUG: Starting PDF generation with {len(filtered_schedules)} schedule records")
+            print(f"DEBUG: Starting PDF generation with {len(schedules)} schedule records")
             
             # Send a "generating" message first to prevent timeout
             query = update.callback_query
@@ -2322,8 +2310,8 @@ class StaffSchedulerBot:
             date_range = self.format_date_range(week_dates)
             print(f"DEBUG: Date range: {date_range}")
             
-            # Convert schedules to PDF-ready format
-            pdf_ready_schedules = self.prepare_schedules_for_pdf(filtered_schedules)
+            # Convert schedules to PDF-ready format (use ALL schedules, no filtering)
+            pdf_ready_schedules = self.prepare_schedules_for_pdf(schedules)
             
             print(f"DEBUG: Calling PDF generator with {len(pdf_ready_schedules)} converted records...")
             pdf_filename = self.pdf_gen.generate_schedule_pdf(pdf_ready_schedules, week_dates, date_range)
