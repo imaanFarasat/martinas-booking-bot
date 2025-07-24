@@ -1279,6 +1279,22 @@ class StaffSchedulerBot:
         schedule_data[day]['start_time'] = selected_time
         context.user_data['schedule_data'] = schedule_data
         
+        # Save the updated schedule to database immediately
+        staff_id = context.user_data.get('current_staff_id')
+        if staff_id:
+            day_data = schedule_data[day]
+            schedule_date = day_data.get('date')
+            self.db.save_schedule(
+                staff_id=staff_id,
+                day_of_week=day,
+                is_working=day_data['is_working'],
+                start_time=day_data.get('start_time'),
+                end_time=day_data.get('end_time'),
+                schedule_date=schedule_date,
+                changed_by=f"ADMIN_{update.effective_user.id}"
+            )
+            print(f"DEBUG: Schedule saved to database for {day}")
+        
         # Show end time picker (just like original flow)
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
         
@@ -1333,6 +1349,22 @@ class StaffSchedulerBot:
         
         schedule_data[day]['end_time'] = selected_time
         context.user_data['schedule_data'] = schedule_data
+        
+        # Save the updated schedule to database immediately
+        staff_id = context.user_data.get('current_staff_id')
+        if staff_id:
+            day_data = schedule_data[day]
+            schedule_date = day_data.get('date')
+            self.db.save_schedule(
+                staff_id=staff_id,
+                day_of_week=day,
+                is_working=day_data['is_working'],
+                start_time=day_data.get('start_time'),
+                end_time=day_data.get('end_time'),
+                schedule_date=schedule_date,
+                changed_by=f"ADMIN_{update.effective_user.id}"
+            )
+            print(f"DEBUG: Schedule saved to database for {day}")
         
         print(f"DEBUG: About to call show_edit_confirmation")
         # Show confirmation message
