@@ -79,7 +79,7 @@ def check_environment():
     return True
 
 def run_health_server():
-    """Run Flask health check server for Railway"""
+    """Run Flask health check server for Railway in background"""
     port = int(os.getenv('PORT', 8000))
     logger = logging.getLogger(__name__)
     logger.info(f"🌐 Starting health check server on port {port}")
@@ -110,14 +110,6 @@ async def start_bot():
         logger.error(f"Traceback:\n{traceback.format_exc()}")
         return False
 
-def run_bot_in_background():
-    """Run bot in background thread"""
-    try:
-        asyncio.run(start_bot())
-    except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.error(f"❌ Bot thread error: {e}")
-
 def main():
     """Main entry point"""
     setup_logging()
@@ -129,16 +121,17 @@ def main():
         logger.error("❌ Environment check failed")
         sys.exit(1)
     
-    # Start bot in background thread
-    bot_thread = threading.Thread(target=run_bot_in_background, daemon=True)
-    bot_thread.start()
-    logger.info("🤖 Bot started in background thread")
+    # Start health check server in background thread (for Railway monitoring)
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+    logger.info("🌐 Health check server started in background thread")
     
-    # Run health check server (this blocks and handles Railway health checks)
+    # Run bot in main thread (required for asyncio signal handling)
     try:
-        run_health_server()
+        success = asyncio.run(start_bot())
+        sys.exit(0 if success else 1)
     except Exception as e:
-        logger.error(f"💥 Health server error: {e}")
+        logger.error(f"💥 Unhandled exception: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
