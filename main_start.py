@@ -81,6 +81,18 @@ def run_bot_in_background():
         logger.error(f"❌ Bot thread error: {e}")
 
 if __name__ == "__main__":
+    # Debug environment variables
+    logger.info("🔍 Checking environment variables...")
+    mysql_host = os.getenv('MYSQL_HOST', 'NOT_SET')
+    mysql_user = os.getenv('MYSQL_USER', 'NOT_SET')
+    mysql_database = os.getenv('MYSQL_DATABASE', 'NOT_SET')
+    bot_token = os.getenv('BOT_TOKEN', 'NOT_SET')
+    
+    logger.info(f"MySQL Host: {mysql_host}")
+    logger.info(f"MySQL User: {mysql_user}")
+    logger.info(f"MySQL Database: {mysql_database}")
+    logger.info(f"Bot Token: {bot_token[:10] if bot_token != 'NOT_SET' else 'NOT_SET'}...")
+    
     # Get port from environment (for Railway)
     port = int(os.environ.get('PORT', 8080))
     logger.info(f"🚀 Starting application on port {port}")
