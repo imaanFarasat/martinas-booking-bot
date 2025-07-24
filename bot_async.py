@@ -60,23 +60,40 @@ class StaffSchedulerBot:
         return MAIN_MENU
     
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show main menu with options"""
+        """Show main menu options"""
+        text = "🤖 *Staff Scheduler Bot*\n\n"
+        text += "Welcome to the staff scheduling system. What would you like to do?"
+        
         keyboard = [
-            [InlineKeyboardButton("👥 Staff Management", callback_data="staff_management")],
-            [InlineKeyboardButton("📅 Set Schedule", callback_data="set_schedule")],
-            [InlineKeyboardButton("👀 View Current Schedules", callback_data="view_current_schedules")],
-            [InlineKeyboardButton("📄 Export PDF", callback_data="export_pdf")],
-            [InlineKeyboardButton("📚 Schedule History", callback_data="schedule_history")],
-            [InlineKeyboardButton("🗑️ Reset All Schedules", callback_data="reset_all_schedules")]
+            [
+                InlineKeyboardButton("👥 Staff Management", callback_data="staff_management"),
+                InlineKeyboardButton("📅 Set Schedule", callback_data="set_schedule")
+            ],
+            [
+                InlineKeyboardButton("📋 View Current Schedules", callback_data="view_current_schedules"),
+                InlineKeyboardButton("📄 Export PDF", callback_data="export_pdf")
+            ],
+            [
+                InlineKeyboardButton("🔄 Bulk Schedule", callback_data="bulk_schedule"),
+                InlineKeyboardButton("📚 Schedule History", callback_data="schedule_history")
+            ],
+            [
+                InlineKeyboardButton("📊 Weekly Stats", callback_data="weekly_stats"),
+                InlineKeyboardButton("🔧 Templates", callback_data="schedule_templates")
+            ],
+            [
+                InlineKeyboardButton("🗑️ Reset All Schedules", callback_data="reset_all_schedules")
+            ]
         ]
+        
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        text = "🤖 *Staff Scheduler Bot*\n\nWelcome! What would you like to do?"
-        
-        if update.callback_query:
-            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
-        else:
+        if update.message:
             await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        else:
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        
+        return MAIN_MENU
     
     async def handle_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle main menu button clicks"""
@@ -98,6 +115,12 @@ class StaffSchedulerBot:
         elif query.data == "export_pdf":
             print(f"DEBUG: export_pdf button clicked by user_id: {user_id}")
             return await self.export_pdf(update, context)
+        elif query.data == "bulk_schedule":
+            return await self.show_bulk_schedule_menu(update, context)
+        elif query.data == "weekly_stats":
+            return await self.show_weekly_stats(update, context)
+        elif query.data == "schedule_templates":
+            return await self.show_schedule_templates(update, context)
         elif query.data == "reset_all_schedules":
             return await self.reset_all_schedules(update, context)
         elif query.data == "schedule_history":
@@ -106,37 +129,10 @@ class StaffSchedulerBot:
             week_key = query.data.split("_")[2]
             return await self.view_week_schedule(update, context, week_key)
         elif query.data.startswith("quick_edit_"):
-            staff_name = query.data.split("_", 2)[2]  # quick_edit_Bea -> Bea
-            
-            # Clear any old context data to prevent interference
+            # Clear context to ensure fresh data
             context.user_data.clear()
-            print(f"DEBUG: quick_edit - Cleared context data for fresh edit of {staff_name}")
-            
-            # Find staff ID by name
-            all_staff = self.db.get_all_staff()
-            staff_id = None
-            for sid, name in all_staff:
-                if name == staff_name:
-                    staff_id = sid
-                    break
-            
-            if staff_id:
-                context.user_data['current_staff_id'] = staff_id
-                context.user_data['current_staff_name'] = staff_name
-                
-                # Check if staff has existing schedule (fetch fresh from database)
-                existing_schedule = self.db.get_staff_schedule(staff_id)
-                print(f"DEBUG: quick_edit - Fresh schedule data from DB: {existing_schedule}")
-                
-                if existing_schedule:
-                    return await self.show_existing_schedule(update, context, existing_schedule)
-                else:
-                    return await self.show_schedule_input_form(update, context)
-            else:
-                await query.answer("❌ Staff not found")
-                return MAIN_MENU
-        elif query.data == "export_historical_pdf":
-            return await self.export_historical_pdf(update, context)
+            staff_name = query.data.split("_", 2)[2]
+            return await self.quick_edit_staff(update, context, staff_name)
         
         return MAIN_MENU
     
@@ -1711,17 +1707,18 @@ class StaffSchedulerBot:
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
         
         if not staff_id:
+            logger.error("save_schedule called without staff_id in context")
             await update.callback_query.edit_message_text("❌ Error: Staff ID not found.")
             return await self.show_main_menu(update, context)
         
-        print(f"DEBUG: Saving schedule for {staff_name} (ID: {staff_id})")
-        print(f"DEBUG: Schedule data: {schedule_data}")
+        logger.info(f"Starting save_schedule for {staff_name} (ID: {staff_id})")
+        logger.debug(f"Schedule data: {schedule_data}")
         
         # Validate complete schedule
         is_valid, errors = ScheduleValidator.validate_schedule_data(schedule_data)
         if not is_valid:
             error_text = "\n".join(errors)
-            print(f"DEBUG: Validation failed: {errors}")
+            logger.warning(f"Schedule validation failed for {staff_name}: {errors}")
             
             # Show detailed error message with option to continue editing
             text = f"❌ *Schedule validation errors for {staff_name}:*\n\n{error_text}\n\n"
@@ -1736,40 +1733,66 @@ class StaffSchedulerBot:
             await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
             return SCHEDULE_INPUT
         
-        print(f"DEBUG: Validation passed, proceeding to save...")
+        logger.info(f"Validation passed for {staff_name}, proceeding to save...")
         
         # Save to database with dates
         user_id = update.effective_user.id
         saved_count = 0
         failed_saves = []
         
-        for day, data in schedule_data.items():
-            try:
-                schedule_date = data.get('date')
-                result = self.db.save_schedule(
-                    staff_id=staff_id,
-                    day_of_week=day,
-                    is_working=data['is_working'],
-                    start_time=data.get('start_time') if data.get('start_time') else None,
-                    end_time=data.get('end_time') if data.get('end_time') else None,
-                    schedule_date=schedule_date,
-                    changed_by=f"ADMIN_{user_id}"
-                )
-                if result:
-                    saved_count += 1
-                    print(f"DEBUG: Successfully saved {day}")
-                else:
-                    failed_saves.append(day)
-                    print(f"DEBUG: Failed to save {day} - no result returned")
-            except Exception as e:
-                failed_saves.append(day)
-                print(f"DEBUG: Exception saving {day}: {e}")
-                # Log the specific error for troubleshooting
-                logger.error(f"Error saving {day} for {staff_name}: {e}")
+        try:
+            # Create scheduling session for tracking
+            week_dates = context.user_data.get('week_dates', {})
+            week_start = context.user_data.get('week_start')
+            
+            if week_start:
+                session_id = self.db.create_scheduling_session(week_start, f"SINGLE_{user_id}")
+                logger.info(f"Created scheduling session {session_id} for {staff_name}")
+            
+            for day_name, day_data in schedule_data.items():
+                if day_name not in ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']:
+                    logger.warning(f"Skipping invalid day: {day_name}")
+                    continue
+                
+                try:
+                    schedule_date = day_data.get('date') or week_dates.get(day_name)
+                    is_working = day_data.get('is_working', True)
+                    start_time = day_data.get('start_time', '') if is_working else None
+                    end_time = day_data.get('end_time', '') if is_working else None
+                    
+                    logger.debug(f"Saving {staff_name} {day_name}: working={is_working}, start={start_time}, end={end_time}, date={schedule_date}")
+                    
+                    success = self.db.save_schedule(
+                        staff_id=staff_id,
+                        day_of_week=day_name,
+                        is_working=is_working,
+                        start_time=start_time,
+                        end_time=end_time,
+                        schedule_date=schedule_date,
+                        changed_by=f"USER_{user_id}"
+                    )
+                    
+                    if success:
+                        saved_count += 1
+                        logger.info(f"Successfully saved {day_name} for {staff_name}")
+                    else:
+                        failed_saves.append(day_name)
+                        logger.error(f"Failed to save {day_name} for {staff_name}")
+                        
+                except Exception as e:
+                    logger.error(f"Exception saving {day_name} for {staff_name}: {e}")
+                    failed_saves.append(day_name)
+            
+            # Complete the session if successful
+            if week_start and saved_count > 0 and not failed_saves:
+                self.db.complete_scheduling_session(session_id)
+                logger.info(f"Completed scheduling session {session_id}")
+            
+        except Exception as e:
+            logger.error(f"Critical error during save_schedule for {staff_name}: {e}")
+            failed_saves = list(schedule_data.keys())  # Mark all as failed
         
-        print(f"DEBUG: Save complete - {saved_count} successful, {len(failed_saves)} failed")
-        if failed_saves:
-            print(f"DEBUG: Failed days: {failed_saves}")
+        logger.info(f"Save complete for {staff_name} - {saved_count} successful, {len(failed_saves)} failed")
         
         # Show appropriate success/failure message
         if failed_saves:
@@ -1795,7 +1818,7 @@ class StaffSchedulerBot:
         
         # Clear any cached data to ensure fresh data is fetched
         context.user_data.clear()
-        print(f"DEBUG: Cleared context data after successful save for {staff_name}")
+        logger.info(f"Cleared context data after successful save for {staff_name}")
         
         # Check if all staff have schedules
         staff_without_schedules = self.db.get_staff_without_complete_schedules()
@@ -1940,101 +1963,125 @@ class StaffSchedulerBot:
             return None
     
     async def view_schedules(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """View all current schedules with quick access"""
-        print(f"DEBUG: view_schedules called - fetching fresh data from database")
-        
-        # Clear any old context data that might interfere with fresh display
-        context.user_data.clear()
-        print(f"DEBUG: Cleared context data before fetching fresh schedules")
-        
-        schedules = self.db.get_all_schedules()
-        
-        if not schedules:
-            keyboard = [[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]]
+        """View all current schedules"""
+        try:
+            # Clear any cached data to ensure fresh data is fetched
+            context.user_data.clear()
+            logger.info("Fetching current schedules - cleared context for fresh data")
+            
+            # Get all schedules from database
+            schedules = self.db.get_all_schedules()
+            logger.info(f"Retrieved {len(schedules)} schedule records from database")
+            
+            if not schedules:
+                text = "📋 *Current Schedules Overview*\n\n"
+                text += "No schedules found. Create schedules for your staff first."
+                
+                keyboard = [
+                    [InlineKeyboardButton("📅 Create Schedule", callback_data="set_schedule")],
+                    [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                query = update.callback_query
+                await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+                return MAIN_MENU
+            
+            # Process schedules
+            staff_schedules = {}
+            
+            for staff_name, day, schedule_date, is_working, start_time, end_time in schedules:
+                if staff_name not in staff_schedules:
+                    staff_schedules[staff_name] = {}
+                
+                # Convert times to proper format
+                formatted_start = self.format_time_for_display(start_time)
+                formatted_end = self.format_time_for_display(end_time)
+                
+                logger.debug(f"Processing {staff_name} {day}: working={is_working}, start={start_time}->{formatted_start}, end={end_time}->{formatted_end}")
+                
+                if is_working and formatted_start and formatted_end:
+                    staff_schedules[staff_name][day] = f"✅ {formatted_start}-{formatted_end}"
+                elif not is_working:
+                    staff_schedules[staff_name][day] = "🔴 OFF"
+                else:
+                    staff_schedules[staff_name][day] = "⏰ Not Set"
+            
+            logger.info(f"Processed schedules for {len(staff_schedules)} staff members")
+            
+            # Create schedule text
+            text = "📋 *Current Schedules Overview*\n\n"
+            text += f"*Last updated: {datetime.now().strftime('%H:%M:%S')}*\n\n"
+            
+            # Get all staff for comparison
+            all_staff = self.db.get_all_staff()
+            staff_names = [name for _, name in all_staff]
+            
+            for staff_name in staff_names:
+                schedule = staff_schedules.get(staff_name, {})
+                text += f"*{staff_name}:*\n"
+                
+                # Count working days and off days
+                working_days = 0
+                off_days = 0
+                incomplete_days = 0
+                
+                for day in DAYS_OF_WEEK:
+                    day_status = schedule.get(day, "⏰ Not Set")
+                    text += f"  {day}: {day_status}\n"
+                    
+                    if "✅" in day_status:
+                        working_days += 1
+                    elif "🔴" in day_status:
+                        off_days += 1
+                    else:
+                        incomplete_days += 1
+                
+                # Add summary
+                text += f"  📊 *Summary:* {working_days} working, {off_days} off, {incomplete_days} incomplete\n\n"
+            
+            # Add action buttons
+            keyboard = []
+            
+            # Quick edit buttons for each staff
+            for staff_name in staff_names:
+                keyboard.append([InlineKeyboardButton(f"✏️ Edit {staff_name}", callback_data=f"quick_edit_{staff_name}")])
+            
+            # Other options
+            keyboard.append([
+                InlineKeyboardButton("🔄 Refresh", callback_data="view_current_schedules"),
+                InlineKeyboardButton("📄 Export PDF", callback_data="export_pdf")
+            ])
+            keyboard.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")])
+            
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             query = update.callback_query
-            await query.edit_message_text(
-                "❌ No schedules found. Please set schedules first.",
-                reply_markup=reply_markup
-            )
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
             return MAIN_MENU
-        
-        print(f"DEBUG: Found {len(schedules)} schedule entries from database")
-        print(f"DEBUG: Sample schedule entries: {schedules[:3] if len(schedules) >= 3 else schedules}")
-        
-        # Group schedules by staff
-        staff_schedules = {}
-        for staff_name, day, schedule_date, is_working, start_time, end_time in schedules:
-            if staff_name not in staff_schedules:
-                staff_schedules[staff_name] = {}
             
-            # Convert times to proper format
-            formatted_start = self.format_time_for_display(start_time)
-            formatted_end = self.format_time_for_display(end_time)
+        except Exception as e:
+            logger.error(f"Error in view_schedules: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             
-            print(f"DEBUG: {staff_name} {day}: is_working={is_working}, start={start_time}->{formatted_start}, end={end_time}->{formatted_end}")
+            error_text = "❌ *Error Loading Schedules*\n\n"
+            error_text += "There was a problem loading the current schedules. "
+            error_text += "Please try again or contact the administrator if the problem persists."
             
-            if is_working and formatted_start and formatted_end:
-                staff_schedules[staff_name][day] = f"✅ {formatted_start}-{formatted_end}"
-            elif not is_working:
-                staff_schedules[staff_name][day] = "🔴 OFF"
+            keyboard = [
+                [InlineKeyboardButton("🔄 Try Again", callback_data="view_current_schedules")],
+                [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            if update.callback_query:
+                await update.callback_query.edit_message_text(error_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
             else:
-                staff_schedules[staff_name][day] = "⏰ Not Set"
-        
-        print(f"DEBUG: Final processed staff_schedules: {staff_schedules}")
-        
-        # Create schedule text
-        text = "📋 *Current Schedules Overview*\n\n"
-        text += f"*Last updated: {datetime.now().strftime('%H:%M:%S')}*\n\n"
-        
-        # Get all staff for comparison
-        all_staff = self.db.get_all_staff()
-        staff_names = [name for _, name in all_staff]
-        
-        for staff_name in staff_names:
-            schedule = staff_schedules.get(staff_name, {})
-            text += f"*{staff_name}:*\n"
+                await update.message.reply_text(error_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
             
-            # Count working days and off days
-            working_days = 0
-            off_days = 0
-            incomplete_days = 0
-            
-            for day in DAYS_OF_WEEK:
-                day_status = schedule.get(day, "⏰ Not Set")
-                text += f"  {day}: {day_status}\n"
-                
-                if "✅" in day_status:
-                    working_days += 1
-                elif "🔴" in day_status:
-                    off_days += 1
-                else:
-                    incomplete_days += 1
-            
-            # Add summary
-            text += f"  📊 *Summary:* {working_days} working, {off_days} off, {incomplete_days} incomplete\n\n"
-        
-        # Add action buttons
-        keyboard = []
-        
-        # Quick edit buttons for each staff
-        for staff_name in staff_names:
-            keyboard.append([InlineKeyboardButton(f"✏️ Edit {staff_name}", callback_data=f"quick_edit_{staff_name}")])
-        
-        # Other options
-        keyboard.append([
-            InlineKeyboardButton("🔄 Refresh", callback_data="view_current_schedules"),
-            InlineKeyboardButton("📄 Export PDF", callback_data="export_pdf")
-        ])
-        keyboard.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        query = update.callback_query
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
-        
-        return MAIN_MENU
+            return MAIN_MENU
     
     def prepare_schedules_for_pdf(self, raw_schedules):
         """Convert raw database schedules to PDF-ready format with proper time strings"""
@@ -2209,10 +2256,8 @@ class StaffSchedulerBot:
         asyncio.run(self.run_async())
     
     async def run_async(self):
-        """Run the bot (asynchronous version)"""
+        """Run the bot (asynchronous version with webhook support)"""
         application = Application.builder().token(BOT_TOKEN).build()
-        
-        # Debug message handler removed - was interfering with conversation flow
         
         # Create conversation handler
         conv_handler = ConversationHandler(
@@ -2256,27 +2301,40 @@ class StaffSchedulerBot:
         # Initialize the application
         await application.initialize()
         
-        # Use manual update checking to avoid conflicts
-        logger.info("Starting bot with manual update checking (conflict-free mode)")
+        # Check if we're running on Railway or other cloud platform
+        port = int(os.getenv('PORT', 8000))
+        webhook_url = os.getenv('WEBHOOK_URL')
         
-        # Get the bot instance
-        bot = application.bot
-        
-        # Manual update loop
-        offset = 0
-        while True:
-            try:
-                # Get updates manually
-                updates = await bot.get_updates(offset=offset, timeout=30)
-                
-                for update in updates:
-                    offset = update.update_id + 1
-                    # Process the update
-                    await application.process_update(update)
-                    
-            except Exception as e:
-                logger.error(f"Error in manual update loop: {e}")
-                await asyncio.sleep(5)  # Wait before retrying
+        if webhook_url:
+            # Production mode with webhooks (more reliable)
+            logger.info(f"Starting bot with webhooks on port {port}")
+            logger.info(f"Webhook URL: {webhook_url}")
+            
+            # Set webhook
+            await application.bot.set_webhook(url=webhook_url)
+            
+            # Start webhook server
+            await application.run_webhook(
+                listen="0.0.0.0",
+                port=port,
+                webhook_url=webhook_url,
+                drop_pending_updates=True
+            )
+        else:
+            # Development mode with polling (fallback)
+            logger.info("Starting bot with polling (development mode)")
+            
+            # Use built-in polling with better error handling
+            await application.run_polling(
+                drop_pending_updates=True,
+                allowed_updates=['message', 'callback_query'],
+                timeout=30,
+                bootstrap_retries=5,
+                read_timeout=10,
+                write_timeout=10,
+                connect_timeout=10,
+                pool_timeout=10
+            )
     
     async def edit_next_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Move to edit the next day in the schedule"""
@@ -2756,12 +2814,14 @@ class StaffSchedulerBot:
             toronto_tz = pytz.timezone('America/Toronto')
             start_date = datetime.now(toronto_tz).date()
         
-        # Find the next Sunday (if today is Sunday, use today)
-        days_until_sunday = (6 - start_date.weekday()) % 7
-        if days_until_sunday == 0:
+        # Calculate the current week's Sunday (0=Monday, 6=Sunday in Python weekday())
+        # For Sunday scheduling, we want to find THIS week's Sunday, not next week's
+        days_since_sunday = (start_date.weekday() + 1) % 7  # Convert to Sunday=0 system
+        week_start = start_date - timedelta(days=days_since_sunday)
+        
+        # If today IS Sunday and we're scheduling, use today as the start of the current week
+        if start_date.weekday() == 6:  # Sunday
             week_start = start_date
-        else:
-            week_start = start_date + timedelta(days=days_until_sunday)
         
         # Calculate all week dates
         week_dates = {}
@@ -3048,6 +3108,358 @@ class StaffSchedulerBot:
             )
         
         return MAIN_MENU
+    
+    async def show_bulk_schedule_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show bulk scheduling options"""
+        text = "🔄 *Bulk Scheduling Options*\n\n"
+        text += "Choose how you want to schedule your team:"
+        
+        keyboard = [
+            [InlineKeyboardButton("📋 Copy from Previous Week", callback_data="copy_previous_week")],
+            [InlineKeyboardButton("📅 Schedule All Staff (Fresh)", callback_data="schedule_all_fresh")],
+            [InlineKeyboardButton("📊 Apply Template", callback_data="apply_template")],
+            [InlineKeyboardButton("⚡ Quick Schedule (Same Times)", callback_data="quick_schedule")],
+            [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        return MAIN_MENU
+    
+    async def copy_previous_week(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Copy schedules from previous week"""
+        try:
+            # Calculate current and previous week dates
+            week_dates, week_start = self.calculate_week_dates()
+            date_range = self.format_date_range(week_dates)
+            
+            # Get previous week's schedules
+            previous_schedules = self.db.get_previous_week_schedules(week_start)
+            
+            if not previous_schedules:
+                text = "❌ *No Previous Week Found*\n\n"
+                text += "No schedules found for the previous week to copy from.\n\n"
+                text += "Would you like to create fresh schedules instead?"
+                
+                keyboard = [
+                    [InlineKeyboardButton("📅 Create Fresh Schedules", callback_data="schedule_all_fresh")],
+                    [InlineKeyboardButton("🔙 Back to Bulk Menu", callback_data="bulk_schedule")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+                return MAIN_MENU
+            
+            # Organize previous schedules by staff
+            staff_schedules = {}
+            for staff_name, staff_id, day_of_week, schedule_date, is_working, start_time, end_time in previous_schedules:
+                if staff_name not in staff_schedules:
+                    staff_schedules[staff_name] = {'staff_id': staff_id, 'schedule': {}}
+                
+                # Format times for display
+                formatted_start = self.format_time_for_display(start_time)
+                formatted_end = self.format_time_for_display(end_time)
+                
+                staff_schedules[staff_name]['schedule'][day_of_week] = {
+                    'is_working': bool(is_working),
+                    'start_time': formatted_start or '',
+                    'end_time': formatted_end or '',
+                    'date': week_dates[day_of_week]  # Update to current week dates
+                }
+            
+            # Store in context for editing
+            context.user_data['bulk_schedule_data'] = staff_schedules
+            context.user_data['week_dates'] = week_dates
+            context.user_data['week_start'] = week_start
+            
+            # Show preview
+            text = f"📋 *Preview: Copy from Previous Week*\n\n"
+            text += f"*Target Week:* {date_range}\n\n"
+            text += f"Found schedules for {len(staff_schedules)} staff members:\n\n"
+            
+            for staff_name, data in staff_schedules.items():
+                schedule = data['schedule']
+                working_days = sum(1 for day_data in schedule.values() if day_data.get('is_working', True))
+                off_days = 7 - working_days
+                text += f"*{staff_name}:* {working_days} working, {off_days} off\n"
+            
+            text += f"\nWould you like to proceed with copying these schedules?"
+            
+            keyboard = [
+                [InlineKeyboardButton("✅ Copy & Save All", callback_data="confirm_copy_previous")],
+                [InlineKeyboardButton("✏️ Copy & Edit First", callback_data="copy_and_edit")],
+                [InlineKeyboardButton("🔙 Back to Bulk Menu", callback_data="bulk_schedule")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            return MAIN_MENU
+            
+        except Exception as e:
+            logger.error(f"Error copying previous week: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error accessing previous week data: {str(e)}\n\nPlease try again or contact administrator.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+            return MAIN_MENU
+    
+    async def confirm_copy_previous(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Confirm and save copied schedules from previous week"""
+        try:
+            bulk_schedule_data = context.user_data.get('bulk_schedule_data', {})
+            week_start = context.user_data.get('week_start')
+            
+            if not bulk_schedule_data or not week_start:
+                await update.callback_query.edit_message_text(
+                    "❌ No schedule data found. Please try again.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+                )
+                return MAIN_MENU
+            
+            # Show progress message
+            await update.callback_query.edit_message_text(
+                "⏳ *Copying Schedules...*\n\nPlease wait while we copy the previous week's schedules.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+            # Prepare data for bulk save
+            schedules_data = []
+            for staff_name, data in bulk_schedule_data.items():
+                staff_id = data['staff_id']
+                schedule_data = data['schedule']
+                schedules_data.append((staff_id, staff_name, schedule_data))
+            
+            # Detect conflicts before saving
+            conflicts, warnings = self.db.detect_schedule_conflicts(schedules_data, week_start)
+            
+            # Create scheduling session
+            session_id = self.db.create_scheduling_session(week_start, f"BULK_COPY_{update.effective_user.id}")
+            
+            # Save all schedules atomically
+            success, saved_count, failed_saves = self.db.save_bulk_schedules(schedules_data, week_start, f"BULK_COPY_{update.effective_user.id}")
+            
+            if success:
+                # Complete the session
+                self.db.complete_scheduling_session(session_id)
+                
+                # Clear context
+                context.user_data.clear()
+                
+                date_range = self.format_date_range(context.user_data.get('week_dates', {}))
+                
+                text = f"✅ *Schedules Copied Successfully!*\n\n"
+                text += f"*Week:* {date_range}\n"
+                text += f"*Saved:* {saved_count} total day schedules\n"
+                text += f"*Staff:* {len(schedules_data)} people\n\n"
+                
+                # Add conflict warnings if any
+                if conflicts:
+                    text += f"⚠️ *Conflicts Detected:*\n"
+                    for conflict in conflicts[:3]:  # Show first 3
+                        text += f"{conflict}\n"
+                    if len(conflicts) > 3:
+                        text += f"... and {len(conflicts)-3} more\n"
+                    text += "\n"
+                
+                if warnings:
+                    text += f"📋 *Warnings:*\n"
+                    for warning in warnings[:3]:  # Show first 3
+                        text += f"{warning}\n"
+                    if len(warnings) > 3:
+                        text += f"... and {len(warnings)-3} more\n"
+                    text += "\n"
+                
+                text += f"All schedules have been copied from the previous week!"
+                
+                keyboard = [
+                    [InlineKeyboardButton("👀 View Schedules", callback_data="view_current_schedules")],
+                    [InlineKeyboardButton("📄 Generate PDF", callback_data="export_pdf")],
+                    [InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")]
+                ]
+            else:
+                text = f"⚠️ *Partial Copy Completed*\n\n"
+                text += f"*Saved:* {saved_count} day schedules\n"
+                text += f"*Failed:* {len(failed_saves)} operations\n\n"
+                if failed_saves:
+                    text += f"*Errors:*\n"
+                    for error in failed_saves[:3]:
+                        text += f"• {error}\n"
+                    if len(failed_saves) > 3:
+                        text += f"... and {len(failed_saves)-3} more\n"
+                
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Try Again", callback_data="confirm_copy_previous")],
+                    [InlineKeyboardButton("👀 View Current Status", callback_data="view_current_schedules")],
+                    [InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")]
+                ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            return MAIN_MENU
+            
+        except Exception as e:
+            logger.error(f"Error confirming copy previous: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error saving schedules: {str(e)}\n\nPlease try again or contact administrator.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+            return MAIN_MENU
+    
+    async def show_weekly_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show weekly coverage statistics and insights"""
+        try:
+            week_dates, week_start = self.calculate_week_dates()
+            date_range = self.format_date_range(week_dates)
+            
+            # Get coverage stats
+            stats = self.db.get_weekly_coverage_stats(week_start)
+            
+            if not stats:
+                text = f"📊 *Weekly Coverage Stats*\n\n"
+                text += f"*Week:* {date_range}\n\n"
+                text += "No schedules found for this week.\n\n"
+                text += "Create schedules first to see coverage statistics."
+                
+                keyboard = [
+                    [InlineKeyboardButton("📅 Create Schedules", callback_data="set_schedule")],
+                    [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+                ]
+            else:
+                text = f"📊 *Weekly Coverage Stats*\n\n"
+                text += f"*Week:* {date_range}\n\n"
+                
+                total_staff = 0
+                total_working_days = 0
+                critical_days = []
+                
+                for day_of_week, total, working, off in stats:
+                    if total > total_staff:
+                        total_staff = total
+                    total_working_days += working
+                    
+                    coverage_percent = (working / total * 100) if total > 0 else 0
+                    
+                    if coverage_percent <= 50:
+                        status = "🚨"
+                        critical_days.append(day_of_week)
+                    elif coverage_percent <= 75:
+                        status = "⚠️"
+                    else:
+                        status = "✅"
+                    
+                    text += f"*{day_of_week}:* {status} {working}/{total} staff ({coverage_percent:.0f}%)\n"
+                
+                text += f"\n📈 *Summary:*\n"
+                text += f"• Total Staff: {total_staff}\n"
+                text += f"• Total Working Days: {total_working_days}\n"
+                text += f"• Average Coverage: {(total_working_days / (len(stats) * total_staff) * 100):.0f}%\n"
+                
+                if critical_days:
+                    text += f"\n🚨 *Critical Coverage Days:*\n"
+                    for day in critical_days:
+                        text += f"• {day}\n"
+                
+                keyboard = [
+                    [InlineKeyboardButton("📋 View Schedules", callback_data="view_current_schedules")],
+                    [InlineKeyboardButton("✏️ Edit Schedules", callback_data="set_schedule")],
+                    [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+                ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            return MAIN_MENU
+            
+        except Exception as e:
+            logger.error(f"Error showing weekly stats: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error loading statistics: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_main")]])
+            )
+            return MAIN_MENU
+    
+    async def show_schedule_templates(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show available schedule templates"""
+        try:
+            templates = self.db.get_schedule_templates()
+            
+            text = "🔧 *Schedule Templates*\n\n"
+            
+            if not templates:
+                text += "No templates found. You can create templates by saving common schedule patterns.\n\n"
+                text += "Templates help you quickly apply the same schedule structure to multiple weeks."
+                
+                keyboard = [
+                    [InlineKeyboardButton("➕ Create Template", callback_data="create_template")],
+                    [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+                ]
+            else:
+                text += f"Available templates ({len(templates)}):\n\n"
+                
+                keyboard = []
+                for template in templates[:10]:  # Show first 10 templates
+                    name = template['name']
+                    description = template['description'] or "No description"
+                    created_by = template['created_by']
+                    
+                    text += f"*{name}*\n"
+                    text += f"  📝 {description[:50]}\n"
+                    text += f"  👤 Created by: {created_by}\n\n"
+                    
+                    keyboard.append([InlineKeyboardButton(f"📋 Apply: {name}", callback_data=f"apply_template_{template['id']}")])
+                
+                if len(templates) > 10:
+                    text += f"... and {len(templates) - 10} more templates\n"
+                
+                keyboard.append([InlineKeyboardButton("➕ Create New Template", callback_data="create_template")])
+                keyboard.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            return MAIN_MENU
+            
+        except Exception as e:
+            logger.error(f"Error showing schedule templates: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error loading templates: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_main")]])
+            )
+            return MAIN_MENU
+    
+    async def quick_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Quick schedule all staff with same times"""
+        try:
+            # Get all staff
+            all_staff = self.db.get_all_staff()
+            
+            if not all_staff:
+                await update.callback_query.edit_message_text(
+                    "❌ No staff members found. Add staff first.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("👥 Add Staff", callback_data="staff_management")]])
+                )
+                return MAIN_MENU
+            
+            text = f"⚡ *Quick Schedule Setup*\n\n"
+            text += f"This will set the same schedule for all {len(all_staff)} staff members.\n\n"
+            text += f"*Staff:* {', '.join([name for _, name in all_staff])}\n\n"
+            text += f"Choose a common schedule pattern:"
+            
+            keyboard = [
+                [InlineKeyboardButton("🌞 Monday-Friday (9:00-17:00)", callback_data="quick_pattern_weekdays")],
+                [InlineKeyboardButton("📅 6 Days/Week (10:00-18:00)", callback_data="quick_pattern_six_days")],
+                [InlineKeyboardButton("🏪 Full Week (12:00-20:00)", callback_data="quick_pattern_full_week")],
+                [InlineKeyboardButton("⚙️ Custom Pattern", callback_data="quick_pattern_custom")],
+                [InlineKeyboardButton("🔙 Back to Bulk Menu", callback_data="bulk_schedule")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            return MAIN_MENU
+            
+        except Exception as e:
+            logger.error(f"Error in quick schedule: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error setting up quick schedule: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+            return MAIN_MENU
 
 if __name__ == "__main__":
     bot = StaffSchedulerBot()

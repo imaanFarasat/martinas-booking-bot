@@ -3,46 +3,53 @@
 Database Factory - Automatically chooses between MySQL, PostgreSQL, and SQLite
 """
 
-from config import USE_MYSQL, USE_POSTGRESQL, USE_SQLITE, MYSQL_HOST, MYSQL_USER, MYSQL_DATABASE
+from config import USE_MYSQL, USE_POSTGRESQL, USE_SQLITE
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_database_manager():
-    """
-    Factory function to get the appropriate database manager
-    Priority: MySQL > PostgreSQL > SQLite
-    """
+    """Get the appropriate database manager based on configuration"""
+    
     if USE_MYSQL:
         try:
-            from database_mysql import MySQLDatabaseManager
-            print(f"🗄️ Using MySQL database: {MYSQL_HOST}/{MYSQL_DATABASE}")
-            return MySQLDatabaseManager()
-        except ImportError:
-            print("⚠️ MySQL dependencies not installed, falling back to PostgreSQL")
-            if USE_POSTGRESQL:
-                try:
-                    from database_postgres import PostgreSQLManager
-                    print("🗄️ Using PostgreSQL database")
-                    return PostgreSQLManager()
-                except ImportError:
-                    print("⚠️ PostgreSQL dependencies not installed, falling back to SQLite")
-                    from database import DatabaseManager
-                    return DatabaseManager()
-            else:
-                from database import DatabaseManager
-                print("🗄️ Using SQLite database")
-                return DatabaseManager()
+            from database_mysql import MySQLManager
+            logger.info("Using MySQL database manager")
+            return MySQLManager()
+        except ImportError as e:
+            logger.error(f"Failed to import MySQL manager: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to initialize MySQL manager: {e}")
+            raise
+    
     elif USE_POSTGRESQL:
         try:
             from database_postgres import PostgreSQLManager
-            print("🗄️ Using PostgreSQL database")
+            logger.info("Using PostgreSQL database manager")
             return PostgreSQLManager()
-        except ImportError:
-            print("⚠️ PostgreSQL dependencies not installed, falling back to SQLite")
+        except ImportError as e:
+            logger.error(f"Failed to import PostgreSQL manager: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to initialize PostgreSQL manager: {e}")
+            raise
+    
+    elif USE_SQLITE:
+        try:
             from database import DatabaseManager
+            logger.info("Using SQLite database manager (fallback)")
             return DatabaseManager()
+        except ImportError as e:
+            logger.error(f"Failed to import SQLite manager: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to initialize SQLite manager: {e}")
+            raise
+    
     else:
-        from database import DatabaseManager
-        print("🗄️ Using SQLite database")
-        return DatabaseManager()
+        logger.error("No database configuration found")
+        raise RuntimeError("No database configuration found. Please set up MySQL, PostgreSQL, or SQLite.")
 
 def migrate_to_mysql(sqlite_db_path='shared_scheduler.db'):
     """
