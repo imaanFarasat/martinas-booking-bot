@@ -1295,12 +1295,13 @@ class StaffSchedulerBot:
             )
             print(f"DEBUG: Schedule saved to database for {day}")
         
-        # Show end time picker (just like original flow)
+        # Show end time picker (enforce both times must be set)
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
         
         text = f"✏️ *Editing {day} for {staff_name}*\n\n"
         text += f"*Start time set:* {selected_time}\n"
         text += f"*Current end time:* {schedule_data[day]['end_time'] or 'Not set'}\n\n"
+        text += f"⚠️ *Both start and end times must be set when editing*\n\n"
         text += f"*Please select the end time:*"
         
         # End time options (exactly like original)
@@ -1541,8 +1542,7 @@ class StaffSchedulerBot:
         
         # Status toggle button
         status_text = "🟢 Working" if day_data['is_working'] else "🔴 Off"
-        keyboard.append([InlineKeyboardButton(f"Status: {status_text}", callback_data="toggle_day_status")])
-        
+        keyboard.append([InlineKeyboardButton(f"Status: {status_text}", callback_data="toggle_day_status")])        
         if day_data['is_working']:
             # Show current times
             start_time = day_data['start_time'] or 'Not set'
