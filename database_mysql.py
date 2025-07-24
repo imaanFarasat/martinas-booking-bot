@@ -578,13 +578,6 @@ class MySQLManager:
             except:
                 pass
             
-            # Set transaction isolation to read committed data
-            cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
-            try:
-                cursor.fetchall()
-            except:
-                pass
-            
             cursor.execute('''
                 SELECT day_of_week, is_working, start_time, end_time 
                 FROM schedules 
@@ -636,13 +629,6 @@ class MySQLManager:
             
             # Ensure we get the most current data
             cursor.execute("START TRANSACTION")
-            try:
-                cursor.fetchall()
-            except:
-                pass
-            
-            # Set transaction isolation to read committed data
-            cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
             try:
                 cursor.fetchall()
             except:
@@ -1004,7 +990,6 @@ class MySQLManager:
         
         try:
             cursor.execute("START TRANSACTION")
-            cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
             try: cursor.fetchall()
             except: pass
             
@@ -1222,7 +1207,6 @@ class MySQLManager:
         
         try:
             cursor.execute("START TRANSACTION")
-            cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
             try: cursor.fetchall()
             except: pass
             
@@ -1275,7 +1259,6 @@ class MySQLManager:
         
         try:
             cursor.execute("START TRANSACTION")
-            cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
             try: cursor.fetchall()
             except: pass
             
