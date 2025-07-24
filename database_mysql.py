@@ -29,7 +29,7 @@ class MySQLDatabaseManager:
     
     def init_database(self):
         """Initialize database with required tables"""
-        # First connect without database to create it if needed
+        # Connect without database first
         conn = mysql.connector.connect(
             host=self.host,
             port=self.port,
@@ -38,61 +38,86 @@ class MySQLDatabaseManager:
         )
         cursor = conn.cursor()
         
-        # Create database if it doesn't exist
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.database}")
-        cursor.execute(f"USE {self.database}")
-        
-        # Staff table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS staff (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(255) UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Schedules table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS schedules (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                staff_id INT,
-                day_of_week VARCHAR(20) NOT NULL,
-                schedule_date DATE,
-                is_working BOOLEAN NOT NULL,
-                start_time TIME,
-                end_time TIME,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE,
-                UNIQUE KEY unique_schedule (staff_id, day_of_week, schedule_date)
-            )
-        ''')
-        
-        # Schedule changes log table for tracking modifications
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS schedule_changes (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                staff_id INT,
-                action VARCHAR(50) NOT NULL,
-                day_of_week VARCHAR(20),
-                old_data JSON,
-                new_data JSON,
-                changed_by VARCHAR(100),
-                changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE SET NULL
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
-        logger.info("MySQL database initialized successfully")
+        try:
+            # Create database if it doesn't exist
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.database}")
+            cursor.fetchall()  # Consume any results
+            
+            cursor.execute(f"USE {self.database}")
+            cursor.fetchall()  # Consume any results
+            
+            # Staff table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS staff (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(255) UNIQUE NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.fetchall()  # Consume any results
+            
+            # Schedules table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS schedules (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    staff_id INT,
+                    day_of_week VARCHAR(20) NOT NULL,
+                    schedule_date DATE,
+                    is_working BOOLEAN NOT NULL,
+                    start_time TIME,
+                    end_time TIME,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE,
+                    UNIQUE KEY unique_schedule (staff_id, day_of_week, schedule_date)
+                )
+            ''')
+            cursor.fetchall()  # Consume any results
+            
+            # Schedule changes log table for tracking modifications
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS schedule_changes (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    staff_id INT,
+                    action VARCHAR(50) NOT NULL,
+                    day_of_week VARCHAR(20),
+                    old_data JSON,
+                    new_data JSON,
+                    changed_by VARCHAR(100),
+                    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE
+                )
+            ''')
+            cursor.fetchall()  # Consume any results
+            
+            # Create indexes for better performance
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_staff_id ON schedules(staff_id)')
+            cursor.fetchall()  # Consume any results
+            
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_day ON schedules(day_of_week)')
+            cursor.fetchall()  # Consume any results
+            
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(schedule_date)')
+            cursor.fetchall()  # Consume any results
+            
+            conn.commit()
+            
+        except Exception as e:
+            conn.rollback()
+            print(f"Error initializing database: {e}")
+            raise
+        finally:
+            cursor.close()
+            conn.close()
     
     def add_staff(self, name):
         """Add a new staff member"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
         try:
-            conn = self.get_connection()
-            cursor = conn.cursor()
             cursor.execute('INSERT INTO staff (name) VALUES (%s)', (name,))
+            cursor.fetchall()  # Consume any results
             staff_id = cursor.lastrowid
             
             # Log the staff addition
@@ -100,17 +125,23 @@ class MySQLDatabaseManager:
                 INSERT INTO schedule_changes (staff_id, action, new_data, changed_by)
                 VALUES (%s, %s, %s, %s)
             ''', (staff_id, 'ADD_STAFF', json.dumps({'name': name}), 'ADMIN'))
+            cursor.fetchall()  # Consume any results
             
             conn.commit()
-            conn.close()
             logger.info(f"Staff member '{name}' added with ID {staff_id}")
             return staff_id
+            
         except mysql.connector.IntegrityError:
+            conn.rollback()
             logger.warning(f"Staff member '{name}' already exists")
             return None  # Name already exists
         except Exception as e:
+            conn.rollback()
             logger.error(f"Error adding staff: {e}")
             return None
+        finally:
+            cursor.close()
+            conn.close()
     
     def remove_staff(self, staff_id):
         """Remove a staff member and their schedules"""
@@ -158,49 +189,66 @@ class MySQLDatabaseManager:
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        # Get existing schedule data for logging
-        cursor.execute('''
-            SELECT is_working, start_time, end_time 
-            FROM schedules 
-            WHERE staff_id = %s AND day_of_week = %s
-        ''', (staff_id, day_of_week))
-        existing = cursor.fetchone()
-        
-        # Prepare new data for logging
-        new_data = {
-            'is_working': is_working,
-            'start_time': str(start_time) if start_time else None,
-            'end_time': str(end_time) if end_time else None,
-            'schedule_date': str(schedule_date) if schedule_date else None
-        }
-        
-        # Log the change
-        if existing:
-            old_data = {
-                'is_working': existing[0],
-                'start_time': str(existing[1]) if existing[1] else None,
-                'end_time': str(existing[2]) if existing[2] else None
+        try:
+            # Get existing schedule data for logging
+            cursor.execute('''
+                SELECT is_working, start_time, end_time 
+                FROM schedules 
+                WHERE staff_id = %s AND day_of_week = %s
+            ''', (staff_id, day_of_week))
+            existing = cursor.fetchone()
+            
+            # Consume any remaining results
+            cursor.fetchall()
+            
+            # Prepare new data for logging
+            new_data = {
+                'is_working': is_working,
+                'start_time': str(start_time) if start_time else None,
+                'end_time': str(end_time) if end_time else None,
+                'schedule_date': str(schedule_date) if schedule_date else None
             }
-            action = 'UPDATE_SCHEDULE'
-        else:
-            old_data = None
-            action = 'ADD_SCHEDULE'
-        
-        # Use REPLACE INTO for MySQL (equivalent to INSERT OR REPLACE in SQLite)
-        cursor.execute('''
-            REPLACE INTO schedules 
-            (staff_id, day_of_week, schedule_date, is_working, start_time, end_time)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        ''', (staff_id, day_of_week, schedule_date, is_working, start_time, end_time))
-        
-        # Log the schedule change
-        cursor.execute('''
-            INSERT INTO schedule_changes (staff_id, action, day_of_week, old_data, new_data, changed_by)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        ''', (staff_id, action, day_of_week, json.dumps(old_data) if old_data else None, json.dumps(new_data), changed_by))
-        
-        conn.commit()
-        conn.close()
+            
+            # Log the change
+            if existing:
+                old_data = {
+                    'is_working': existing[0],
+                    'start_time': str(existing[1]) if existing[1] else None,
+                    'end_time': str(existing[2]) if existing[2] else None
+                }
+                action = 'UPDATE_SCHEDULE'
+            else:
+                old_data = None
+                action = 'ADD_SCHEDULE'
+            
+            # Use REPLACE INTO for MySQL (equivalent to INSERT OR REPLACE in SQLite)
+            cursor.execute('''
+                REPLACE INTO schedules 
+                (staff_id, day_of_week, schedule_date, is_working, start_time, end_time)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', (staff_id, day_of_week, schedule_date, is_working, start_time, end_time))
+            
+            # Consume any remaining results
+            cursor.fetchall()
+            
+            # Log the schedule change
+            cursor.execute('''
+                INSERT INTO schedule_changes (staff_id, action, day_of_week, old_data, new_data, changed_by)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', (staff_id, action, day_of_week, json.dumps(old_data) if old_data else None, json.dumps(new_data), changed_by))
+            
+            # Consume any remaining results
+            cursor.fetchall()
+            
+            conn.commit()
+            
+        except Exception as e:
+            conn.rollback()
+            print(f"Error saving schedule: {e}")
+            raise
+        finally:
+            cursor.close()
+            conn.close()
         
         # Get staff name for logging
         staff_name = self.get_staff_by_id(staff_id)
