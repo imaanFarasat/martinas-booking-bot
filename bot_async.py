@@ -107,6 +107,11 @@ class StaffSchedulerBot:
             return await self.view_week_schedule(update, context, week_key)
         elif query.data.startswith("quick_edit_"):
             staff_name = query.data.split("_", 2)[2]  # quick_edit_Bea -> Bea
+            
+            # Clear any old context data to prevent interference
+            context.user_data.clear()
+            print(f"DEBUG: quick_edit - Cleared context data for fresh edit of {staff_name}")
+            
             # Find staff ID by name
             all_staff = self.db.get_all_staff()
             staff_id = None
@@ -119,8 +124,10 @@ class StaffSchedulerBot:
                 context.user_data['current_staff_id'] = staff_id
                 context.user_data['current_staff_name'] = staff_name
                 
-                # Check if staff has existing schedule
+                # Check if staff has existing schedule (fetch fresh from database)
                 existing_schedule = self.db.get_staff_schedule(staff_id)
+                print(f"DEBUG: quick_edit - Fresh schedule data from DB: {existing_schedule}")
+                
                 if existing_schedule:
                     return await self.show_existing_schedule(update, context, existing_schedule)
                 else:
@@ -461,6 +468,16 @@ class StaffSchedulerBot:
         """Show existing schedule for a staff member with edit options"""
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
         
+        # Clear any old schedule data to prevent interference
+        old_staff_id = context.user_data.get('current_staff_id')
+        old_staff_name = context.user_data.get('current_staff_name')
+        context.user_data.clear()
+        context.user_data['current_staff_id'] = old_staff_id
+        context.user_data['current_staff_name'] = old_staff_name
+        
+        print(f"DEBUG: show_existing_schedule - Cleared context and set fresh data for {staff_name}")
+        print(f"DEBUG: Existing schedule data: {existing_schedule}")
+        
         # Convert database format to our schedule format
         schedule_data = {}
         for day in DAYS_OF_WEEK:
@@ -472,6 +489,8 @@ class StaffSchedulerBot:
             formatted_start = self.format_time_for_display(start_time)
             formatted_end = self.format_time_for_display(end_time)
             
+            print(f"DEBUG: Processing {day}: working={is_working}, start={start_time}->{formatted_start}, end={end_time}->{formatted_end}")
+            
             schedule_data[day] = {
                 'is_working': bool(is_working),
                 'start_time': formatted_start or '',
@@ -479,6 +498,7 @@ class StaffSchedulerBot:
             }
         
         context.user_data['schedule_data'] = schedule_data
+        print(f"DEBUG: Final schedule_data in context: {schedule_data}")
         
         # Build display text
         text = f"📅 *{staff_name}'s Current Schedule*\n\n"
@@ -510,7 +530,8 @@ class StaffSchedulerBot:
             [
                 InlineKeyboardButton("✅ Yes, Edit Schedule", callback_data="edit_existing_schedule"),
                 InlineKeyboardButton("❌ No, Keep Current", callback_data="back_schedule_menu")
-            ]
+            ],
+            [InlineKeyboardButton("👀 Back to View Schedules", callback_data="view_current_schedules")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1110,7 +1131,8 @@ class StaffSchedulerBot:
             [
                 InlineKeyboardButton("✅ Yes, Save", callback_data="save_schedule"),
                 InlineKeyboardButton("✏️ Edit", callback_data="edit_schedule")
-            ]
+            ],
+            [InlineKeyboardButton("👀 Back to View Schedules", callback_data="view_current_schedules")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -1766,6 +1788,10 @@ class StaffSchedulerBot:
         week_dates = context.user_data.get('week_dates', {})
         date_range = self.format_date_range(week_dates)
         
+        # Clear any cached data to ensure fresh data is fetched
+        context.user_data.clear()
+        print(f"DEBUG: Cleared context data after successful save for {staff_name}")
+        
         # Check if all staff have schedules
         staff_without_schedules = self.db.get_staff_without_complete_schedules()
         
@@ -1782,6 +1808,7 @@ class StaffSchedulerBot:
             
             keyboard = [
                 [InlineKeyboardButton("📅 Schedule Next Staff", callback_data="set_schedule")],
+                [InlineKeyboardButton("👀 View Updated Schedules", callback_data="view_current_schedules")],
                 [InlineKeyboardButton("📄 Generate PDF", callback_data="export_pdf")],
                 [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
             ]
@@ -1794,6 +1821,7 @@ class StaffSchedulerBot:
             text += f"All staff members have been scheduled for this week."
             
             keyboard = [
+                [InlineKeyboardButton("👀 View Updated Schedules", callback_data="view_current_schedules")],
                 [InlineKeyboardButton("📄 Generate PDF", callback_data="export_pdf")],
                 [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
             ]
@@ -1834,6 +1862,11 @@ class StaffSchedulerBot:
     async def view_schedules(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """View all current schedules with quick access"""
         print(f"DEBUG: view_schedules called - fetching fresh data from database")
+        
+        # Clear any old context data that might interfere with fresh display
+        context.user_data.clear()
+        print(f"DEBUG: Cleared context data before fetching fresh schedules")
+        
         schedules = self.db.get_all_schedules()
         
         if not schedules:
@@ -1847,7 +1880,8 @@ class StaffSchedulerBot:
             )
             return MAIN_MENU
         
-        print(f"DEBUG: Found {len(schedules)} schedule entries")
+        print(f"DEBUG: Found {len(schedules)} schedule entries from database")
+        print(f"DEBUG: Sample schedule entries: {schedules[:3] if len(schedules) >= 3 else schedules}")
         
         # Group schedules by staff
         staff_schedules = {}
@@ -1859,7 +1893,7 @@ class StaffSchedulerBot:
             formatted_start = self.format_time_for_display(start_time)
             formatted_end = self.format_time_for_display(end_time)
             
-            print(f"DEBUG: {staff_name} {day}: is_working={is_working}, start={formatted_start}, end={formatted_end}")
+            print(f"DEBUG: {staff_name} {day}: is_working={is_working}, start={start_time}->{formatted_start}, end={end_time}->{formatted_end}")
             
             if is_working and formatted_start and formatted_end:
                 staff_schedules[staff_name][day] = f"✅ {formatted_start}-{formatted_end}"
@@ -1867,6 +1901,8 @@ class StaffSchedulerBot:
                 staff_schedules[staff_name][day] = "🔴 OFF"
             else:
                 staff_schedules[staff_name][day] = "⏰ Not Set"
+        
+        print(f"DEBUG: Final processed staff_schedules: {staff_schedules}")
         
         # Create schedule text
         text = "📋 *Current Schedules Overview*\n\n"
@@ -1919,6 +1955,34 @@ class StaffSchedulerBot:
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         
         return MAIN_MENU
+    
+    def prepare_schedules_for_pdf(self, raw_schedules):
+        """Convert raw database schedules to PDF-ready format with proper time strings"""
+        converted_schedules = []
+        
+        for record in raw_schedules:
+            if len(record) >= 6:
+                staff_name, day, schedule_date, is_working, start_time, end_time = record[:6]
+                
+                # Convert times to string format
+                formatted_start = self.format_time_for_display(start_time) or ""
+                formatted_end = self.format_time_for_display(end_time) or ""
+                
+                print(f"DEBUG: Converting {staff_name} {day}: {start_time} -> {formatted_start}, {end_time} -> {formatted_end}")
+                
+                converted_schedules.append((
+                    staff_name, 
+                    day, 
+                    schedule_date, 
+                    is_working, 
+                    formatted_start, 
+                    formatted_end
+                ))
+            else:
+                print(f"DEBUG: Skipping malformed record: {record}")
+        
+        print(f"DEBUG: Converted {len(converted_schedules)} schedule records for PDF")
+        return converted_schedules
     
     async def export_pdf(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Generate and send PDF schedule"""
@@ -1994,8 +2058,11 @@ class StaffSchedulerBot:
             date_range = self.format_date_range(week_dates)
             print(f"DEBUG: Date range: {date_range}")
             
-            print(f"DEBUG: Calling PDF generator with {len(filtered_schedules)} records...")
-            pdf_filename = self.pdf_gen.generate_schedule_pdf(filtered_schedules, week_dates, date_range)
+            # Convert schedules to PDF-ready format
+            pdf_ready_schedules = self.prepare_schedules_for_pdf(filtered_schedules)
+            
+            print(f"DEBUG: Calling PDF generator with {len(pdf_ready_schedules)} converted records...")
+            pdf_filename = self.pdf_gen.generate_schedule_pdf(pdf_ready_schedules, week_dates, date_range)
             print(f"DEBUG: PDF generated successfully: {pdf_filename}")
             
             # Send PDF
@@ -2788,8 +2855,12 @@ class StaffSchedulerBot:
             if staff_name not in staff_schedules:
                 staff_schedules[staff_name] = {}
             
-            if is_working and start_time and end_time:
-                staff_schedules[staff_name][day] = f"✅ {start_time}-{end_time}"
+            # Convert times to proper format for display
+            formatted_start = self.format_time_for_display(start_time)
+            formatted_end = self.format_time_for_display(end_time)
+            
+            if is_working and formatted_start and formatted_end:
+                staff_schedules[staff_name][day] = f"✅ {formatted_start}-{formatted_end}"
             elif not is_working:
                 staff_schedules[staff_name][day] = "🔴 OFF"
             else:
@@ -2847,18 +2918,18 @@ class StaffSchedulerBot:
                 parse_mode=ParseMode.MARKDOWN
             )
             
-            formatted_data, _ = self.pdf_gen.format_schedule_data(schedules)
-            print(f"DEBUG: Historical formatted data for {len(formatted_data)} staff members")
+            # Convert schedules to PDF-ready format
+            pdf_ready_schedules = self.prepare_schedules_for_pdf(schedules)
+            print(f"DEBUG: Historical converted data for {len(pdf_ready_schedules)} records")
             
             # Create a unique filename for historical PDF
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             original_filename = self.pdf_gen.filename
             historical_filename = f"schedule_{date_range.replace(' ', '_').replace(',', '')}_{timestamp}.pdf"
-            self.pdf_gen.filename = historical_filename
             
             print(f"DEBUG: Calling PDF generator for historical data...")
-            pdf_filename = self.pdf_gen.generate_schedule_pdf(formatted_data, week_dates, date_range)
+            pdf_filename = self.pdf_gen.generate_schedule_pdf(pdf_ready_schedules, week_dates, date_range, historical_filename)
             print(f"DEBUG: Historical PDF generated successfully: {pdf_filename}")
             
             # Send PDF
@@ -2869,9 +2940,6 @@ class StaffSchedulerBot:
                     filename=historical_filename,
                     caption=f"📄 Historical Schedule: {date_range}"
                 )
-            
-            # Restore original filename
-            self.pdf_gen.filename = original_filename
             
             keyboard = [
                 [InlineKeyboardButton("🔙 Back to History", callback_data="schedule_history")],
