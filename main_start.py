@@ -7,7 +7,6 @@ import asyncio
 import logging
 import threading
 from dotenv import load_dotenv
-from bot_async import StaffSchedulerBot
 from flask import Flask, jsonify
 import time
 
@@ -46,23 +45,25 @@ def health():
 def run_web_server():
     """Run the Flask web server"""
     port = int(os.environ.get('PORT', 8080))
+    logger.info(f"🌐 Starting web server on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
 
-async def main():
-    """Main function to run the bot"""
+async def start_bot():
+    """Start the bot in background"""
     try:
+        from bot_async import StaffSchedulerBot
+        
         # Check if BOT_TOKEN is set
         bot_token = os.getenv('BOT_TOKEN')
         if not bot_token or bot_token == 'YOUR_BOT_TOKEN_HERE':
             logger.error("❌ BOT_TOKEN not set or invalid")
-            logger.info("💡 Please set BOT_TOKEN in your environment variables")
             return
         
-        logger.info(f"Starting main bot with token: {bot_token[:10]}...")
+        logger.info(f"🤖 Starting bot with token: {bot_token[:10]}...")
         
         # Create and run bot
         bot = StaffSchedulerBot()
-        logger.info("Main bot created successfully")
+        logger.info("✅ Bot created successfully")
         
         # Run the bot
         await bot.run_async()
@@ -72,15 +73,22 @@ async def main():
         import traceback
         traceback.print_exc()
 
+def run_bot_in_background():
+    """Run bot in background thread"""
+    try:
+        asyncio.run(start_bot())
+    except Exception as e:
+        logger.error(f"❌ Bot thread error: {e}")
+
 if __name__ == "__main__":
     # Get port from environment (for Railway)
     port = int(os.environ.get('PORT', 8080))
-    logger.info(f"🚀 Starting bot on port {port}")
+    logger.info(f"🚀 Starting application on port {port}")
     
-    # Start web server in a separate thread
-    web_thread = threading.Thread(target=run_web_server, daemon=True)
-    web_thread.start()
-    logger.info("🌐 Web server started for health checks")
+    # Start bot in background thread
+    bot_thread = threading.Thread(target=run_bot_in_background, daemon=True)
+    bot_thread.start()
+    logger.info("🤖 Bot started in background")
     
-    # Run the bot
-    asyncio.run(main()) 
+    # Run web server (this will block and handle requests)
+    run_web_server() 
