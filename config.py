@@ -31,11 +31,26 @@ MYSQL_PORT = int(os.getenv('MYSQL_PORT', '3306'))
 MYSQL_USER = os.getenv('MYSQL_USER', 'root')
 MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', '')
 MYSQL_DATABASE = os.getenv('MYSQL_DATABASE', 'staff_scheduler')
+
+# Railway specific: Check for Railway MySQL environment variables
+if not MYSQL_HOST or MYSQL_HOST == 'localhost':
+    # Try Railway's default MySQL environment variables
+    RAILWAY_MYSQL_HOST = os.getenv('RAILWAY_MYSQL_HOST')
+    RAILWAY_MYSQL_USER = os.getenv('RAILWAY_MYSQL_USER')
+    RAILWAY_MYSQL_PASSWORD = os.getenv('RAILWAY_MYSQL_PASSWORD')
+    RAILWAY_MYSQL_DATABASE = os.getenv('RAILWAY_MYSQL_DATABASE')
+    
+    if RAILWAY_MYSQL_HOST:
+        MYSQL_HOST = RAILWAY_MYSQL_HOST
+        MYSQL_USER = RAILWAY_MYSQL_USER or MYSQL_USER
+        MYSQL_PASSWORD = RAILWAY_MYSQL_PASSWORD or MYSQL_PASSWORD
+        MYSQL_DATABASE = RAILWAY_MYSQL_DATABASE or MYSQL_DATABASE
+
 DATABASE_URL = os.getenv('DATABASE_URL')  # PostgreSQL connection string (fallback)
 DATABASE_PATH = os.getenv('DATABASE_PATH', 'shared_scheduler.db')  # SQLite fallback
 
 # Database type selection
-USE_MYSQL = bool(MYSQL_HOST and MYSQL_USER and MYSQL_DATABASE)
+USE_MYSQL = bool(MYSQL_HOST and MYSQL_USER and MYSQL_DATABASE and MYSQL_HOST != 'localhost')
 USE_POSTGRESQL = bool(DATABASE_URL) and not USE_MYSQL
 USE_SQLITE = not (USE_MYSQL or USE_POSTGRESQL)
 

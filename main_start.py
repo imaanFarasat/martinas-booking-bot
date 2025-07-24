@@ -88,9 +88,17 @@ if __name__ == "__main__":
     mysql_database = os.getenv('MYSQL_DATABASE', 'NOT_SET')
     bot_token = os.getenv('BOT_TOKEN', 'NOT_SET')
     
+    # Check Railway specific variables
+    railway_mysql_host = os.getenv('RAILWAY_MYSQL_HOST', 'NOT_SET')
+    railway_mysql_user = os.getenv('RAILWAY_MYSQL_USER', 'NOT_SET')
+    railway_mysql_database = os.getenv('RAILWAY_MYSQL_DATABASE', 'NOT_SET')
+    
     logger.info(f"MySQL Host: {mysql_host}")
     logger.info(f"MySQL User: {mysql_user}")
     logger.info(f"MySQL Database: {mysql_database}")
+    logger.info(f"Railway MySQL Host: {railway_mysql_host}")
+    logger.info(f"Railway MySQL User: {railway_mysql_user}")
+    logger.info(f"Railway MySQL Database: {railway_mysql_database}")
     logger.info(f"Bot Token: {bot_token[:10] if bot_token != 'NOT_SET' else 'NOT_SET'}...")
     
     # Get port from environment (for Railway)
