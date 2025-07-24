@@ -115,9 +115,28 @@ class ScheduleValidator:
             is_working = data['is_working']
             
             if is_working:
-                # If working, validate times (handle empty strings)
-                start_time = data.get('start_time', '').strip()
-                end_time = data.get('end_time', '').strip()
+                # If working, validate times (handle empty strings and timedelta objects)
+                start_time_raw = data.get('start_time', '')
+                end_time_raw = data.get('end_time', '')
+                
+                # Convert timedelta objects to strings if needed
+                if hasattr(start_time_raw, 'total_seconds'):
+                    # It's a timedelta object, convert to HH:MM format
+                    total_seconds = int(start_time_raw.total_seconds())
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    start_time = f"{hours:02d}:{minutes:02d}"
+                else:
+                    start_time = str(start_time_raw).strip() if start_time_raw else ''
+                
+                if hasattr(end_time_raw, 'total_seconds'):
+                    # It's a timedelta object, convert to HH:MM format
+                    total_seconds = int(end_time_raw.total_seconds())
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    end_time = f"{hours:02d}:{minutes:02d}"
+                else:
+                    end_time = str(end_time_raw).strip() if end_time_raw else ''
                 
                 if not start_time or not end_time:
                     errors.append(f"{day}: Missing start or end time for working day")
@@ -128,8 +147,20 @@ class ScheduleValidator:
                     errors.append(f"{day}: {time_error}")
             else:
                 # If not working, times should be None or empty
-                start_time = data.get('start_time', '').strip()
-                end_time = data.get('end_time', '').strip()
+                start_time_raw = data.get('start_time', '')
+                end_time_raw = data.get('end_time', '')
+                
+                # Convert timedelta objects to strings if needed for checking
+                if hasattr(start_time_raw, 'total_seconds'):
+                    start_time = "has_time"  # Non-empty to trigger error
+                else:
+                    start_time = str(start_time_raw).strip() if start_time_raw else ''
+                
+                if hasattr(end_time_raw, 'total_seconds'):
+                    end_time = "has_time"  # Non-empty to trigger error
+                else:
+                    end_time = str(end_time_raw).strip() if end_time_raw else ''
+                
                 if start_time or end_time:
                     errors.append(f"{day}: Should not have times when marked as Off")
         

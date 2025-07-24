@@ -468,10 +468,14 @@ class StaffSchedulerBot:
         
         # Fill in existing schedule data
         for day, is_working, start_time, end_time in existing_schedule:
+            # Convert times to proper format for display and context
+            formatted_start = self.format_time_for_display(start_time)
+            formatted_end = self.format_time_for_display(end_time)
+            
             schedule_data[day] = {
                 'is_working': bool(is_working),
-                'start_time': start_time or '',
-                'end_time': end_time or ''
+                'start_time': formatted_start or '',
+                'end_time': formatted_end or ''
             }
         
         context.user_data['schedule_data'] = schedule_data
@@ -1812,8 +1816,24 @@ class StaffSchedulerBot:
         
         return MAIN_MENU
     
+    def format_time_for_display(self, time_value):
+        """Convert time value (timedelta or string) to HH:MM format for display"""
+        if not time_value:
+            return None
+        
+        if hasattr(time_value, 'total_seconds'):
+            # It's a timedelta object from MySQL
+            total_seconds = int(time_value.total_seconds())
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            return f"{hours:02d}:{minutes:02d}"
+        else:
+            # It's already a string, return as-is
+            return str(time_value).strip() if time_value else None
+    
     async def view_schedules(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """View all current schedules with quick access"""
+        print(f"DEBUG: view_schedules called - fetching fresh data from database")
         schedules = self.db.get_all_schedules()
         
         if not schedules:
@@ -1827,14 +1847,22 @@ class StaffSchedulerBot:
             )
             return MAIN_MENU
         
+        print(f"DEBUG: Found {len(schedules)} schedule entries")
+        
         # Group schedules by staff
         staff_schedules = {}
         for staff_name, day, schedule_date, is_working, start_time, end_time in schedules:
             if staff_name not in staff_schedules:
                 staff_schedules[staff_name] = {}
             
-            if is_working and start_time and end_time:
-                staff_schedules[staff_name][day] = f"✅ {start_time}-{end_time}"
+            # Convert times to proper format
+            formatted_start = self.format_time_for_display(start_time)
+            formatted_end = self.format_time_for_display(end_time)
+            
+            print(f"DEBUG: {staff_name} {day}: is_working={is_working}, start={formatted_start}, end={formatted_end}")
+            
+            if is_working and formatted_start and formatted_end:
+                staff_schedules[staff_name][day] = f"✅ {formatted_start}-{formatted_end}"
             elif not is_working:
                 staff_schedules[staff_name][day] = "🔴 OFF"
             else:
@@ -1842,6 +1870,7 @@ class StaffSchedulerBot:
         
         # Create schedule text
         text = "📋 *Current Schedules Overview*\n\n"
+        text += f"*Last updated: {datetime.now().strftime('%H:%M:%S')}*\n\n"
         
         # Get all staff for comparison
         all_staff = self.db.get_all_staff()
@@ -1879,9 +1908,10 @@ class StaffSchedulerBot:
         
         # Other options
         keyboard.append([
-            InlineKeyboardButton("📄 Export PDF", callback_data="export_pdf"),
-            InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")
+            InlineKeyboardButton("🔄 Refresh", callback_data="view_current_schedules"),
+            InlineKeyboardButton("📄 Export PDF", callback_data="export_pdf")
         ])
+        keyboard.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
