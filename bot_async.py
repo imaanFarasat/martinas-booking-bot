@@ -625,8 +625,16 @@ class StaffSchedulerBot:
             )
             return SCHEDULE_INPUT
         elif query.data == "done_editing_day":
+            # Refresh data from database before showing weekly view
+            staff_id = context.user_data.get('current_staff_id')
+            if staff_id:
+                await self.refresh_schedule_data(context, staff_id)
             return await self.show_weekly_schedule_view(update, context)
         elif query.data == "back_to_week":
+            # Refresh data from database before showing weekly view
+            staff_id = context.user_data.get('current_staff_id')
+            if staff_id:
+                await self.refresh_schedule_data(context, staff_id)
             return await self.show_weekly_schedule_view(update, context)
         elif query.data == "back_to_day_edit":
             return await self.back_to_day_edit(update, context)
@@ -1367,6 +1375,10 @@ class StaffSchedulerBot:
         context.user_data['schedule_data'] = schedule_data
         
         print(f"DEBUG: End time set in context data for {day}")
+        
+        # CRITICAL FIX: Save this single day to database immediately
+        await self.save_single_day_edit(update, context, day)
+        
         print(f"DEBUG: About to call show_edit_confirmation")
         # Show confirmation message
         return await self.show_edit_confirmation(update, context, day)
@@ -1702,7 +1714,100 @@ class StaffSchedulerBot:
         
         context.user_data['schedule_data'] = schedule_data
         
+        # CRITICAL FIX: Save the status change immediately to database
+        await self.save_single_day_edit(update, context, day)
+        
         return await self.show_day_edit_view(update, context)
+    
+    async def save_single_day_edit(self, update: Update, context: ContextTypes.DEFAULT_TYPE, day):
+        """Save a single day edit immediately to database"""
+        try:
+            staff_id = context.user_data.get('current_staff_id')
+            staff_name = context.user_data.get('current_staff_name', 'Unknown')
+            schedule_data = context.user_data.get('schedule_data', {})
+            
+            if not staff_id:
+                logger.error(f"save_single_day_edit: No staff_id in context for {day}")
+                return False
+            
+            day_data = schedule_data.get(day, {})
+            if not day_data:
+                logger.error(f"save_single_day_edit: No day_data for {day}")
+                return False
+            
+            is_working = day_data.get('is_working', True)
+            start_time = day_data.get('start_time', '') if is_working else None
+            end_time = day_data.get('end_time', '') if is_working else None
+            
+            # Don't save if working but missing times
+            if is_working and (not start_time or not end_time):
+                logger.warning(f"save_single_day_edit: {day} is working but missing times - start:{start_time}, end:{end_time}")
+                return False
+            
+            # Get week dates for schedule_date
+            week_dates = context.user_data.get('week_dates', {})
+            schedule_date = week_dates.get(day)
+            
+            user_id = update.effective_user.id
+            
+            logger.info(f"SINGLE DAY SAVE: {staff_name} {day} -> working:{is_working}, start:{start_time}, end:{end_time}, date:{schedule_date}")
+            print(f"DEBUG: SINGLE DAY SAVE: {staff_name} {day} -> working:{is_working}, start:{start_time}, end:{end_time}")
+            
+            # Save to database
+            success = self.db.save_schedule(
+                staff_id=staff_id,
+                day_of_week=day,
+                is_working=is_working,
+                start_time=start_time,
+                end_time=end_time,
+                schedule_date=schedule_date,
+                changed_by=f"SINGLE_EDIT_{user_id}"
+            )
+            
+            if success:
+                logger.info(f"✅ Single day save successful: {staff_name} {day}")
+                print(f"DEBUG: ✅ Single day save successful: {staff_name} {day}")
+            else:
+                logger.error(f"❌ Single day save failed: {staff_name} {day}")
+                print(f"DEBUG: ❌ Single day save failed: {staff_name} {day}")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Exception in save_single_day_edit for {day}: {e}")
+            print(f"DEBUG: Exception in save_single_day_edit for {day}: {e}")
+            return False
+    
+    async def refresh_schedule_data(self, context, staff_id):
+        """Refresh schedule data from database to ensure we have the latest data"""
+        try:
+            # Get fresh schedule data from database
+            existing_schedule = self.db.get_staff_schedule(staff_id)
+            
+            # Convert to our format
+            schedule_data = {}
+            for day in DAYS_OF_WEEK:
+                schedule_data[day] = {'is_working': True, 'start_time': '', 'end_time': ''}
+            
+            # Fill in existing schedule data
+            for day, is_working, start_time, end_time in existing_schedule:
+                formatted_start = self.format_time_for_display(start_time)
+                formatted_end = self.format_time_for_display(end_time)
+                
+                schedule_data[day] = {
+                    'is_working': bool(is_working),
+                    'start_time': formatted_start or '',
+                    'end_time': formatted_end or ''
+                }
+            
+            # Update context with fresh data
+            context.user_data['schedule_data'] = schedule_data
+            print(f"DEBUG: Refreshed schedule data from database for staff_id {staff_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error refreshing schedule data: {e}")
+            return False
     
     async def save_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Save the complete schedule for the staff member"""
