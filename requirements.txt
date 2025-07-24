@@ -1,5 +1,9 @@
-python-telegram-bot==21.7
+python-telegram-bot==22.3
 pytz
 reportlab
 python-dotenv
-flask 
+flask
+nest-asyncio
+psycopg2-binary
+mysql-connector-python
+gunicorn 

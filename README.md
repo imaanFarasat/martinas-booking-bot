@@ -1,95 +1,104 @@
-# Martina Schedule Bot - VPS Deployment
+# Staff Scheduler Bot
 
-A Telegram bot system for managing staff schedules and appointments, deployed on VPS for maximum reliability.
+A Telegram bot for managing staff schedules with enhanced database logging and tracking.
 
-## 🚀 VPS Deployment
+## Features
 
-**For detailed deployment instructions, see [VPS_DEPLOYMENT_GUIDE.md](VPS_DEPLOYMENT_GUIDE.md)**
+- **Staff Management**: Add and remove staff members
+- **Schedule Management**: Create and edit weekly schedules for staff
+- **Database Logging**: All changes are tracked in the database for audit purposes
+- **PDF Export**: Generate weekly schedule PDFs
+- **Schedule History**: View historical schedules
+- **Admin Only**: Secure access with admin user verification
 
-### Quick Setup:
-1. **Get a VPS** (DigitalOcean recommended - $5/month)
-2. **Clone this repository** to your VPS
-3. **Run deployment script**: `./deploy.sh`
-4. **Configure environment**: Copy `env.example` to `.env`
-5. **Start services**: `sudo systemctl start martina-*`
+## Setup
 
-## 📋 Features
+1. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-- 👥 **Staff Management** (Add/Remove staff)
-- 📅 **Schedule Management** (Set weekly schedules)
-- 👀 **View Current Schedules**
-- 📄 **Export PDF Reports**
-- 📚 **Schedule History**
-- 🗑️ **Reset All Schedules**
-- 🔄 **Automatic Restarts**
-- 📊 **System Monitoring**
+2. **Install MySQL** (if not already installed):
+   - **Windows**: Download from [MySQL website](https://dev.mysql.com/downloads/mysql/)
+   - **macOS**: `brew install mysql`
+   - **Ubuntu/Debian**: `sudo apt install mysql-server`
+   - **CentOS/RHEL**: `sudo yum install mysql-server`
 
-## 🔧 Environment Variables
+2. **Environment Variables**:
+   Create a `.env` file with:
+   ```
+   BOT_TOKEN=your_telegram_bot_token
+   ADMIN_IDS=123456789,987654321
+   
+   # Database Configuration (choose one):
+   # MySQL (recommended):
+   MYSQL_HOST=localhost
+   MYSQL_PORT=3306
+   MYSQL_USER=root
+   MYSQL_PASSWORD=your_password
+   MYSQL_DATABASE=staff_scheduler
+   
+   # PostgreSQL (alternative):
+   # DATABASE_URL=postgresql://user:password@localhost:5432/database
+   
+   # SQLite (fallback):
+   # DATABASE_PATH=shared_scheduler.db
+   ```
 
-Create a `.env` file with:
-```bash
-BOT_TOKEN=your_admin_bot_token_here
-STAFF_BOT_TOKEN=your_staff_bot_token_here
-ADMIN_IDS=123456789,987654321
-DATABASE_PATH=/opt/martina-bot/shared_scheduler.db
-PORT=10000
-```
+3. **Setup MySQL** (recommended):
+   ```bash
+   python setup_mysql.py
+   ```
 
-## 📁 Project Structure
+4. **Run the Bot**:
+   ```bash
+   python main_start.py
+   ```
 
-- `bot_async.py` - Admin bot logic
-- `staff_bot.py` - Staff bot logic
-- `web_server.py` - Web server for health checks
+## Database Structure
+
+The bot supports multiple database types with the following tables:
+
+- **staff**: Staff member information
+- **schedules**: Weekly schedule data
+- **schedule_changes**: Audit log of all changes
+
+### Database Priority:
+1. **MySQL** (recommended for production)
+2. **PostgreSQL** (alternative)
+3. **SQLite** (fallback for development)
+
+## Usage
+
+1. Start the bot with `/start`
+2. Add staff members through Staff Management
+3. Set schedules for each staff member
+4. Export PDF when all schedules are complete
+
+## Database Logging
+
+All actions are logged in the `schedule_changes` table:
+- Staff additions/removals
+- Schedule modifications
+- User who made the change
+- Timestamp of changes
+
+This data can be used for:
+- Audit trails
+- Future staff bot integration
+- Change tracking and reporting
+
+## Files Structure
+
+- `bot_async.py` - Main bot logic
+- `database.py` - Database operations with logging
 - `config.py` - Configuration settings
-- `database.py` - Database operations
-- `pdf_generator.py` - PDF report generation
+- `main_start.py` - Bot startup script
+- `pdf_generator.py` - PDF generation
 - `validators.py` - Input validation
-- `deploy.sh` - VPS deployment script
 
-## 🎯 Usage
+## Future Enhancements
 
-### Admin Bot:
-1. Send `/start` to your admin bot
-2. Use inline keyboard to manage schedules
-3. Only authorized admins can access
-
-### Staff Bot:
-1. Staff members send `/start` to staff bot
-2. View their current schedules
-3. Get notifications about changes
-
-## 🔧 Management Commands
-
-```bash
-# Check service status
-sudo systemctl status martina-*
-
-# View logs
-sudo journalctl -u martina-admin-bot -f
-
-# Restart services
-sudo systemctl restart martina-*
-
-# Update application
-cd /opt/martina-bot && git pull && sudo systemctl restart martina-*
-```
-
-## 💰 Cost
-
-- **VPS Hosting**: $5-10/month (DigitalOcean)
-- **Reliability**: 99.9% uptime
-- **Performance**: Dedicated resources
-- **Support**: Full system control
-
-## 🎉 Benefits Over Render
-
-- ✅ **No threading restrictions**
-- ✅ **Stable, reliable operation**
-- ✅ **Full process control**
-- ✅ **Better performance**
-- ✅ **Easier debugging**
-- ✅ **Cost-effective long-term**
-
----
-
-**Ready to deploy?** Follow the [VPS Deployment Guide](VPS_DEPLOYMENT_GUIDE.md) for step-by-step instructions! 🚀 
+- Staff bot for viewing schedules (using the logged data)
+- Web dashboard for schedule management
+- Advanced reporting and analytics 

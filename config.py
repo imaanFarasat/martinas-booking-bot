@@ -24,8 +24,20 @@ MAX_END_TIME = "21:00"
 # Days of the week
 DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-# Database - Use environment variable for shared database on Render
-DATABASE_PATH = os.getenv('DATABASE_PATH', 'shared_scheduler.db')
+# Database Configuration
+# Priority: MySQL > PostgreSQL > SQLite
+MYSQL_HOST = os.getenv('MYSQL_HOST', 'localhost')
+MYSQL_PORT = int(os.getenv('MYSQL_PORT', '3306'))
+MYSQL_USER = os.getenv('MYSQL_USER', 'root')
+MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', '')
+MYSQL_DATABASE = os.getenv('MYSQL_DATABASE', 'staff_scheduler')
+DATABASE_URL = os.getenv('DATABASE_URL')  # PostgreSQL connection string (fallback)
+DATABASE_PATH = os.getenv('DATABASE_PATH', 'shared_scheduler.db')  # SQLite fallback
+
+# Database type selection
+USE_MYSQL = bool(MYSQL_HOST and MYSQL_USER and MYSQL_DATABASE)
+USE_POSTGRESQL = bool(DATABASE_URL) and not USE_MYSQL
+USE_SQLITE = not (USE_MYSQL or USE_POSTGRESQL)
 
 # PDF Settings
 PDF_FILENAME = 'weekly_schedule.pdf'

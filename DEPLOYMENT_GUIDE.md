@@ -1,152 +1,170 @@
-# 🚀 Deployment Guide - Booking Nail Bots
+# 🚀 Online Deployment Guide
 
-This guide will help you deploy both the Admin Bot and Staff Bot on Render.
+## **Option 1: Railway (Recommended)**
 
-## 📋 Prerequisites
+### **Step 1: Sign Up**
+1. Go to [railway.app](https://railway.app)
+2. Sign up with GitHub
+3. Create a new project
 
-1. **Two Telegram Bots** (created via @BotFather)
-   - Admin Bot Token (for management)
-   - Staff Bot Token (for staff viewing)
+### **Step 2: Add Database**
+1. Click "New" → "Database" → "MySQL"
+2. Wait for database to be created
+3. Copy the database connection details
 
-2. **Two GitHub Repositories**
-   - Main repository (for admin bot)
-   - Staff repository (for staff bot)
+### **Step 3: Deploy Your Code**
+1. Click "New" → "GitHub Repo"
+2. Connect your GitHub repository
+3. Select your repository
+4. Railway will automatically detect Python and deploy
 
-## 🤖 Bot 1: Admin Bot (Main Repository)
+### **Step 4: Set Environment Variables**
+In Railway dashboard, go to your app → "Variables" and add:
 
-### Step 1: Create GitHub Repository
-1. Create a new repository: `imaanFarasat/booking-nail`
-2. Upload all files from this directory (except staff files)
-
-### Step 2: Deploy on Render
-1. Go to [Render Dashboard](https://dashboard.render.com)
-2. Click **"New +"** → **"Web Service"**
-3. Connect your GitHub repository
-4. Configure:
-   - **Name**: `booking-nail-admin-bot`
-   - **Environment**: `Python 3`
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `python main_start.py`
-
-### Step 3: Set Environment Variables
-Add these environment variables in Render:
-- `BOT_TOKEN` = Your admin bot token
-- `ADMIN_IDS` = Your admin user IDs (comma-separated)
-- `DATABASE_PATH` = `/opt/render/project/src/staff_scheduler.db`
-
-### Step 4: Deploy
-Click **"Create Web Service"** and wait for deployment.
-
-## 👥 Bot 2: Staff Bot (Separate Repository)
-
-### Step 1: Create Staff Repository
-1. Create new repository: `imaanFarasat/booking-nail-staff-bot`
-2. Copy these files to the new repository:
-   - `staff_bot_standalone.py`
-   - `staff_requirements.txt`
-   - `staff_config.py`
-   - `README_staff.md`
-   - `render_staff.yaml` (rename to `render.yaml`)
-
-### Step 2: Deploy on Render
-1. Go to [Render Dashboard](https://dashboard.render.com)
-2. Click **"New +"** → **"Web Service"**
-3. Connect your staff GitHub repository
-4. Configure:
-   - **Name**: `booking-nail-staff-bot`
-   - **Environment**: `Python 3`
-   - **Build Command**: `pip install -r staff_requirements.txt`
-   - **Start Command**: `python staff_bot_standalone.py`
-
-### Step 3: Set Environment Variables
-Add these environment variables in Render:
-- `STAFF_BOT_TOKEN` = `7610615551:AAE-BsH3KdqVYlrb6txqDa9Vc3OCrDesfFw`
-- `DATABASE_PATH` = `/opt/render/project/src/shared_scheduler.db`
-
-### Step 4: Deploy
-Click **"Create Web Service"** and wait for deployment.
-
-## 🔧 Environment Variables Summary
-
-### Admin Bot
-```
-BOT_TOKEN=your_admin_bot_token_here
-ADMIN_IDS=123456789,987654321
-DATABASE_PATH=/opt/render/project/src/staff_scheduler.db
+```env
+BOT_TOKEN=your_bot_token_here
+ADMIN_IDS=your_admin_id_here
+MYSQL_HOST=your_railway_mysql_host
+MYSQL_PORT=3306
+MYSQL_USER=your_railway_mysql_user
+MYSQL_PASSWORD=your_railway_mysql_password
+MYSQL_DATABASE=your_railway_mysql_database
 ```
 
-### Staff Bot
-```
-STAFF_BOT_TOKEN=7610615551:AAE-BsH3KdqVYlrb6txqDa9Vc3OCrDesfFw
-DATABASE_PATH=/opt/render/project/src/shared_scheduler.db
-```
-
-## 📁 File Structure
-
-### Main Repository (Admin Bot)
-```
-booking-nail/
-├── main_start.py          # Entry point
-├── bot_async.py           # Main bot logic
-├── config.py              # Configuration
-├── database.py            # Database operations
-├── pdf_generator.py       # PDF generation
-├── validators.py          # Input validation
-├── requirements.txt       # Dependencies
-├── render.yaml           # Render config
-├── README.md             # Documentation
-└── .gitignore           # Git ignore
-```
-
-### Staff Repository (Staff Bot)
-```
-booking-nail-staff-bot/
-├── staff_bot_standalone.py  # Staff bot logic
-├── staff_requirements.txt   # Dependencies
-├── staff_config.py         # Configuration
-├── render.yaml            # Render config
-└── README_staff.md        # Documentation
-```
-
-## ✅ Verification Steps
-
-### Admin Bot
-1. Start the admin bot: `/start`
-2. Verify admin access
-3. Test staff management
-4. Test schedule creation
-
-### Staff Bot
-1. Start the staff bot: `/start`
-2. Select a staff member
-3. View current schedule
-4. Test staff switching
-
-## 🔗 Bot Links
-
-After deployment, you'll have:
-- **Admin Bot**: `https://t.me/your_admin_bot_username`
-- **Staff Bot**: `https://t.me/your_staff_bot_username`
-
-## 🛠️ Troubleshooting
-
-### Common Issues
-1. **Bot not responding**: Check environment variables
-2. **Database errors**: Verify database path
-3. **Import errors**: Check requirements.txt
-4. **Token conflicts**: Ensure separate tokens
-
-### Logs
-Check Render logs for both services to debug issues.
-
-## 📞 Support
-
-If you encounter issues:
-1. Check Render deployment logs
-2. Verify environment variables
-3. Test bot tokens manually
-4. Check database connectivity
+### **Step 5: Deploy**
+1. Railway will automatically deploy when you push to GitHub
+2. Your bot will be online 24/7!
 
 ---
 
-**Both bots are now ready for deployment! 🎉** 
+## **Option 2: Render**
+
+### **Step 1: Sign Up**
+1. Go to [render.com](https://render.com)
+2. Sign up with GitHub
+
+### **Step 2: Create Web Service**
+1. Click "New" → "Web Service"
+2. Connect your GitHub repository
+3. Set build command: `pip install -r requirements.txt`
+4. Set start command: `python main_start.py`
+
+### **Step 3: Add Database**
+1. Create a new PostgreSQL database (free tier available)
+2. Or use external MySQL (PlanetScale, Railway, etc.)
+
+### **Step 4: Set Environment Variables**
+Add the same environment variables as above.
+
+---
+
+## **Option 3: Heroku**
+
+### **Step 1: Sign Up**
+1. Go to [heroku.com](https://heroku.com)
+2. Create account
+
+### **Step 2: Install Heroku CLI**
+```bash
+# Windows
+# Download from https://devcenter.heroku.com/articles/heroku-cli
+
+# Or use winget
+winget install --id=Heroku.HerokuCLI
+```
+
+### **Step 3: Deploy**
+```bash
+# Login to Heroku
+heroku login
+
+# Create app
+heroku create your-bot-name
+
+# Add MySQL addon
+heroku addons:create jawsdb:kitefin
+
+# Set environment variables
+heroku config:set BOT_TOKEN=your_bot_token
+heroku config:set ADMIN_IDS=your_admin_id
+
+# Deploy
+git add .
+git commit -m "Deploy to Heroku"
+git push heroku main
+```
+
+---
+
+## **🔧 Required Code Changes**
+
+### **1. Update main_start.py for Web Deployment**
+```python
+import os
+import asyncio
+from dotenv import load_dotenv
+from bot_async import StaffSchedulerBot
+
+load_dotenv()
+
+async def main():
+    bot = StaffSchedulerBot()
+    await bot.run_async()
+
+if __name__ == "__main__":
+    # For web deployment, use this:
+    port = int(os.environ.get('PORT', 8080))
+    print(f"Starting bot on port {port}")
+    asyncio.run(main())
+```
+
+### **2. Add Web Server (Optional)**
+```python
+# Add to main_start.py for health checks
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "Bot is running!"
+
+# Run both bot and web server
+if __name__ == "__main__":
+    import threading
+    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=port)).start()
+    asyncio.run(main())
+```
+
+---
+
+## **💰 Cost Comparison**
+
+| Platform | Free Tier | Paid Tier | Database |
+|----------|-----------|-----------|----------|
+| Railway | ✅ Yes | $5/month | ✅ Built-in |
+| Render | ✅ Yes | $7/month | ✅ Built-in |
+| Heroku | ❌ No | $5/month | ✅ Add-on |
+| DigitalOcean | ❌ No | $5/month | ✅ $15/month |
+
+---
+
+## **🎯 Recommendation**
+
+**Start with Railway** because:
+- ✅ Free tier available
+- ✅ Built-in MySQL database
+- ✅ Simple deployment
+- ✅ Good documentation
+- ✅ Reliable service
+
+---
+
+## **📝 Next Steps**
+
+1. **Choose your platform** (Railway recommended)
+2. **Follow the setup guide** above
+3. **Test your bot** online
+4. **Monitor logs** to ensure it's working
+5. **Set up monitoring** (optional)
+
+Your bot will run 24/7 and work even when your computer is off! 🚀 

@@ -1,27 +1,52 @@
-import sqlite3
+import mysql.connector
 import json
 import logging
 from datetime import datetime, timedelta
-from config import DATABASE_PATH
+from config import MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-class DatabaseManager:
+class MySQLDatabaseManager:
     def __init__(self):
-        self.db_path = DATABASE_PATH
+        self.host = MYSQL_HOST
+        self.port = MYSQL_PORT
+        self.user = MYSQL_USER
+        self.password = MYSQL_PASSWORD
+        self.database = MYSQL_DATABASE
         self.init_database()
+    
+    def get_connection(self):
+        """Get MySQL connection"""
+        return mysql.connector.connect(
+            host=self.host,
+            port=self.port,
+            user=self.user,
+            password=self.password,
+            database=self.database,
+            autocommit=True
+        )
     
     def init_database(self):
         """Initialize database with required tables"""
-        conn = sqlite3.connect(self.db_path)
+        # First connect without database to create it if needed
+        conn = mysql.connector.connect(
+            host=self.host,
+            port=self.port,
+            user=self.user,
+            password=self.password
+        )
         cursor = conn.cursor()
+        
+        # Create database if it doesn't exist
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.database}")
+        cursor.execute(f"USE {self.database}")
         
         # Staff table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS staff (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) UNIQUE NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -29,88 +54,82 @@ class DatabaseManager:
         # Schedules table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS schedules (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                staff_id INTEGER,
-                day_of_week TEXT NOT NULL,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                staff_id INT,
+                day_of_week VARCHAR(20) NOT NULL,
                 schedule_date DATE,
                 is_working BOOLEAN NOT NULL,
-                start_time TEXT,
-                end_time TEXT,
+                start_time TIME,
+                end_time TIME,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (staff_id) REFERENCES staff (id),
-                UNIQUE(staff_id, day_of_week, schedule_date)
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE,
+                UNIQUE KEY unique_schedule (staff_id, day_of_week, schedule_date)
             )
         ''')
         
         # Schedule changes log table for tracking modifications
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS schedule_changes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                staff_id INTEGER,
-                action TEXT NOT NULL,
-                day_of_week TEXT,
-                old_data TEXT,
-                new_data TEXT,
-                changed_by TEXT,
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                staff_id INT,
+                action VARCHAR(50) NOT NULL,
+                day_of_week VARCHAR(20),
+                old_data JSON,
+                new_data JSON,
+                changed_by VARCHAR(100),
                 changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (staff_id) REFERENCES staff (id)
+                FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE SET NULL
             )
         ''')
         
-        # Add date column if it doesn't exist (for existing databases)
-        try:
-            cursor.execute('ALTER TABLE schedules ADD COLUMN schedule_date DATE')
-        except sqlite3.OperationalError:
-            pass  # Column already exists
-        
         conn.commit()
         conn.close()
-        logger.info("Database initialized successfully")
+        logger.info("MySQL database initialized successfully")
     
     def add_staff(self, name):
         """Add a new staff member"""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self.get_connection()
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO staff (name) VALUES (?)', (name,))
+            cursor.execute('INSERT INTO staff (name) VALUES (%s)', (name,))
             staff_id = cursor.lastrowid
             
             # Log the staff addition
             cursor.execute('''
                 INSERT INTO schedule_changes (staff_id, action, new_data, changed_by)
-                VALUES (?, 'ADD_STAFF', ?, 'ADMIN')
-            ''', (staff_id, name))
+                VALUES (%s, %s, %s, %s)
+            ''', (staff_id, 'ADD_STAFF', json.dumps({'name': name}), 'ADMIN'))
             
             conn.commit()
             conn.close()
             logger.info(f"Staff member '{name}' added with ID {staff_id}")
             return staff_id
-        except sqlite3.IntegrityError:
+        except mysql.connector.IntegrityError:
             logger.warning(f"Staff member '{name}' already exists")
             return None  # Name already exists
+        except Exception as e:
+            logger.error(f"Error adding staff: {e}")
+            return None
     
     def remove_staff(self, staff_id):
         """Remove a staff member and their schedules"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         
         # Get staff name before deletion for logging
-        cursor.execute('SELECT name FROM staff WHERE id = ?', (staff_id,))
+        cursor.execute('SELECT name FROM staff WHERE id = %s', (staff_id,))
         staff_name = cursor.fetchone()
         staff_name = staff_name[0] if staff_name else "Unknown"
         
         # Log the staff removal
         cursor.execute('''
             INSERT INTO schedule_changes (staff_id, action, old_data, changed_by)
-            VALUES (?, 'REMOVE_STAFF', ?, 'ADMIN')
-        ''', (staff_id, staff_name))
+            VALUES (%s, %s, %s, %s)
+        ''', (staff_id, 'REMOVE_STAFF', json.dumps({'name': staff_name}), 'ADMIN'))
         
-        # Remove schedules first
-        cursor.execute('DELETE FROM schedules WHERE staff_id = ?', (staff_id,))
-        
-        # Remove staff
-        cursor.execute('DELETE FROM staff WHERE id = ?', (staff_id,))
+        # Remove staff (schedules will be removed by CASCADE)
+        cursor.execute('DELETE FROM staff WHERE id = %s', (staff_id,))
         
         conn.commit()
         conn.close()
@@ -118,7 +137,7 @@ class DatabaseManager:
     
     def get_all_staff(self):
         """Get all staff members"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('SELECT id, name FROM staff ORDER BY name')
         staff = cursor.fetchall()
@@ -127,56 +146,57 @@ class DatabaseManager:
     
     def get_staff_by_id(self, staff_id):
         """Get staff member by ID"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute('SELECT id, name FROM staff WHERE id = ?', (staff_id,))
+        cursor.execute('SELECT id, name FROM staff WHERE id = %s', (staff_id,))
         staff = cursor.fetchone()
         conn.close()
         return staff
     
     def save_schedule(self, staff_id, day_of_week, is_working, start_time=None, end_time=None, schedule_date=None, changed_by="ADMIN"):
         """Save or update a schedule for a staff member"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         
         # Get existing schedule data for logging
         cursor.execute('''
             SELECT is_working, start_time, end_time 
             FROM schedules 
-            WHERE staff_id = ? AND day_of_week = ?
+            WHERE staff_id = %s AND day_of_week = %s
         ''', (staff_id, day_of_week))
         existing = cursor.fetchone()
         
         # Prepare new data for logging
         new_data = {
             'is_working': is_working,
-            'start_time': start_time,
-            'end_time': end_time,
-            'schedule_date': schedule_date
+            'start_time': str(start_time) if start_time else None,
+            'end_time': str(end_time) if end_time else None,
+            'schedule_date': str(schedule_date) if schedule_date else None
         }
         
         # Log the change
         if existing:
             old_data = {
                 'is_working': existing[0],
-                'start_time': existing[1],
-                'end_time': existing[2]
+                'start_time': str(existing[1]) if existing[1] else None,
+                'end_time': str(existing[2]) if existing[2] else None
             }
             action = 'UPDATE_SCHEDULE'
         else:
             old_data = None
             action = 'ADD_SCHEDULE'
         
+        # Use REPLACE INTO for MySQL (equivalent to INSERT OR REPLACE in SQLite)
         cursor.execute('''
-            INSERT OR REPLACE INTO schedules 
-            (staff_id, day_of_week, schedule_date, is_working, start_time, end_time, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            REPLACE INTO schedules 
+            (staff_id, day_of_week, schedule_date, is_working, start_time, end_time)
+            VALUES (%s, %s, %s, %s, %s, %s)
         ''', (staff_id, day_of_week, schedule_date, is_working, start_time, end_time))
         
         # Log the schedule change
         cursor.execute('''
             INSERT INTO schedule_changes (staff_id, action, day_of_week, old_data, new_data, changed_by)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
         ''', (staff_id, action, day_of_week, json.dumps(old_data) if old_data else None, json.dumps(new_data), changed_by))
         
         conn.commit()
@@ -193,22 +213,13 @@ class DatabaseManager:
     
     def get_staff_schedule(self, staff_id):
         """Get complete schedule for a staff member"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT day_of_week, is_working, start_time, end_time 
             FROM schedules 
-            WHERE staff_id = ? 
-            ORDER BY 
-                CASE day_of_week
-                    WHEN 'Sunday' THEN 1
-                    WHEN 'Monday' THEN 2
-                    WHEN 'Tuesday' THEN 3
-                    WHEN 'Wednesday' THEN 4
-                    WHEN 'Thursday' THEN 5
-                    WHEN 'Friday' THEN 6
-                    WHEN 'Saturday' THEN 7
-                END
+            WHERE staff_id = %s 
+            ORDER BY FIELD(day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
         ''', (staff_id,))
         schedule = cursor.fetchall()
         conn.close()
@@ -216,22 +227,13 @@ class DatabaseManager:
     
     def get_all_schedules(self):
         """Get all schedules for all staff"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT s.name, sch.day_of_week, sch.schedule_date, sch.is_working, sch.start_time, sch.end_time
             FROM staff s
             LEFT JOIN schedules sch ON s.id = sch.staff_id
-            ORDER BY s.name, 
-                CASE sch.day_of_week
-                    WHEN 'Sunday' THEN 1
-                    WHEN 'Monday' THEN 2
-                    WHEN 'Tuesday' THEN 3
-                    WHEN 'Wednesday' THEN 4
-                    WHEN 'Thursday' THEN 5
-                    WHEN 'Friday' THEN 6
-                    WHEN 'Saturday' THEN 7
-                END
+            ORDER BY s.name, FIELD(sch.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
         ''')
         schedules = cursor.fetchall()
         conn.close()
@@ -239,7 +241,7 @@ class DatabaseManager:
     
     def get_staff_with_complete_schedules(self):
         """Get staff who have complete weekly schedules"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT s.id, s.name, COUNT(sch.day_of_week) as schedule_count
@@ -254,7 +256,7 @@ class DatabaseManager:
     
     def get_staff_without_complete_schedules(self):
         """Get staff who don't have complete weekly schedules"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT s.id, s.name, COUNT(sch.day_of_week) as schedule_count
@@ -265,11 +267,11 @@ class DatabaseManager:
         ''')
         staff_without_schedules = cursor.fetchall()
         conn.close()
-        return staff_without_schedules 
+        return staff_without_schedules
     
     def reset_all_schedules(self):
         """Reset all schedules - clear all schedule data"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         
         # Clear all schedules
@@ -278,26 +280,19 @@ class DatabaseManager:
         conn.commit()
         conn.close()
         
-        return True 
-
+        return True
+    
     def get_schedule_history(self):
         """Get all historical schedules grouped by week dates"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
+        
+        # Get all unique dates
         cursor.execute('''
             SELECT DISTINCT schedule_date, day_of_week
             FROM schedules 
             WHERE schedule_date IS NOT NULL
-            ORDER BY schedule_date DESC, 
-                CASE day_of_week
-                    WHEN 'Sunday' THEN 1
-                    WHEN 'Monday' THEN 2
-                    WHEN 'Tuesday' THEN 3
-                    WHEN 'Wednesday' THEN 4
-                    WHEN 'Thursday' THEN 5
-                    WHEN 'Friday' THEN 6
-                    WHEN 'Saturday' THEN 7
-                END
+            ORDER BY schedule_date DESC, FIELD(day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
         ''')
         dates = cursor.fetchall()
         
@@ -306,7 +301,7 @@ class DatabaseManager:
         for schedule_date, day_of_week in dates:
             if schedule_date:
                 # Find the Sunday of this week
-                date_obj = datetime.strptime(schedule_date, '%Y-%m-%d').date()
+                date_obj = schedule_date
                 days_since_sunday = date_obj.weekday() + 1  # Monday=0, so Sunday=6, but we want Sunday=0
                 if days_since_sunday == 7:
                     days_since_sunday = 0
@@ -328,27 +323,18 @@ class DatabaseManager:
                 SELECT s.name, sch.day_of_week, sch.schedule_date, sch.is_working, sch.start_time, sch.end_time
                 FROM staff s
                 LEFT JOIN schedules sch ON s.id = sch.staff_id
-                WHERE sch.schedule_date BETWEEN ? AND ?
-                ORDER BY s.name, 
-                    CASE sch.day_of_week
-                        WHEN 'Sunday' THEN 1
-                        WHEN 'Monday' THEN 2
-                        WHEN 'Tuesday' THEN 3
-                        WHEN 'Wednesday' THEN 4
-                        WHEN 'Thursday' THEN 5
-                        WHEN 'Friday' THEN 6
-                        WHEN 'Saturday' THEN 7
-                    END
+                WHERE sch.schedule_date BETWEEN %s AND %s
+                ORDER BY s.name, FIELD(sch.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
             ''', (week_start.strftime('%Y-%m-%d'), week_end.strftime('%Y-%m-%d')))
             
             week_info['schedules'] = cursor.fetchall()
         
         conn.close()
-        return week_schedules 
-
+        return week_schedules
+    
     def get_staff_schedule_for_week(self, staff_id, week_start):
         """Get a specific staff member's schedule for a week"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         
         week_end = week_start + timedelta(days=6)
@@ -356,17 +342,8 @@ class DatabaseManager:
         cursor.execute('''
             SELECT day_of_week, schedule_date, is_working, start_time, end_time
             FROM schedules
-            WHERE staff_id = ? AND schedule_date BETWEEN ? AND ?
-            ORDER BY 
-                CASE day_of_week
-                    WHEN 'Sunday' THEN 1
-                    WHEN 'Monday' THEN 2
-                    WHEN 'Tuesday' THEN 3
-                    WHEN 'Wednesday' THEN 4
-                    WHEN 'Thursday' THEN 5
-                    WHEN 'Friday' THEN 6
-                    WHEN 'Saturday' THEN 7
-                END
+            WHERE staff_id = %s AND schedule_date BETWEEN %s AND %s
+            ORDER BY FIELD(day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
         ''', (staff_id, week_start.strftime('%Y-%m-%d'), week_end.strftime('%Y-%m-%d')))
         
         schedules = cursor.fetchall()
@@ -386,23 +363,14 @@ class DatabaseManager:
     
     def get_staff_schedule_history(self, staff_id):
         """Get historical schedules for a specific staff member"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         
         cursor.execute('''
             SELECT DISTINCT schedule_date, day_of_week
             FROM schedules 
-            WHERE staff_id = ? AND schedule_date IS NOT NULL
-            ORDER BY schedule_date DESC, 
-                CASE day_of_week
-                    WHEN 'Sunday' THEN 1
-                    WHEN 'Monday' THEN 2
-                    WHEN 'Tuesday' THEN 3
-                    WHEN 'Wednesday' THEN 4
-                    WHEN 'Thursday' THEN 5
-                    WHEN 'Friday' THEN 6
-                    WHEN 'Saturday' THEN 7
-                END
+            WHERE staff_id = %s AND schedule_date IS NOT NULL
+            ORDER BY schedule_date DESC, FIELD(day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
         ''', (staff_id,))
         
         dates = cursor.fetchall()
@@ -412,7 +380,7 @@ class DatabaseManager:
         for schedule_date, day_of_week in dates:
             if schedule_date:
                 # Find the Sunday of this week
-                date_obj = datetime.strptime(schedule_date, '%Y-%m-%d').date()
+                date_obj = schedule_date
                 days_since_sunday = date_obj.weekday() + 1  # Monday=0, so Sunday=6, but we want Sunday=0
                 if days_since_sunday == 7:
                     days_since_sunday = 0
@@ -434,27 +402,18 @@ class DatabaseManager:
                 SELECT s.name, sch.day_of_week, sch.schedule_date, sch.is_working, sch.start_time, sch.end_time
                 FROM staff s
                 LEFT JOIN schedules sch ON s.id = sch.staff_id
-                WHERE s.id = ? AND sch.schedule_date BETWEEN ? AND ?
-                ORDER BY 
-                    CASE sch.day_of_week
-                        WHEN 'Sunday' THEN 1
-                        WHEN 'Monday' THEN 2
-                        WHEN 'Tuesday' THEN 3
-                        WHEN 'Wednesday' THEN 4
-                        WHEN 'Thursday' THEN 5
-                        WHEN 'Friday' THEN 6
-                        WHEN 'Saturday' THEN 7
-                    END
+                WHERE s.id = %s AND sch.schedule_date BETWEEN %s AND %s
+                ORDER BY FIELD(sch.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
             ''', (staff_id, week_start.strftime('%Y-%m-%d'), week_end.strftime('%Y-%m-%d')))
             
             week_info['schedules'] = cursor.fetchall()
         
         conn.close()
-        return week_schedules 
+        return week_schedules
     
     def get_schedule_changes(self, staff_id=None, limit=50):
         """Get recent schedule changes for tracking modifications"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         
         if staff_id:
@@ -462,9 +421,9 @@ class DatabaseManager:
                 SELECT sc.id, s.name, sc.action, sc.day_of_week, sc.old_data, sc.new_data, sc.changed_by, sc.changed_at
                 FROM schedule_changes sc
                 LEFT JOIN staff s ON sc.staff_id = s.id
-                WHERE sc.staff_id = ?
+                WHERE sc.staff_id = %s
                 ORDER BY sc.changed_at DESC
-                LIMIT ?
+                LIMIT %s
             ''', (staff_id, limit))
         else:
             cursor.execute('''
@@ -472,7 +431,7 @@ class DatabaseManager:
                 FROM schedule_changes sc
                 LEFT JOIN staff s ON sc.staff_id = s.id
                 ORDER BY sc.changed_at DESC
-                LIMIT ?
+                LIMIT %s
             ''', (limit,))
         
         changes = cursor.fetchall()
@@ -481,7 +440,7 @@ class DatabaseManager:
     
     def get_staff_complete_schedule_status(self):
         """Get status of which staff have complete schedules"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('''
             SELECT 
@@ -504,7 +463,7 @@ class DatabaseManager:
     
     def get_recent_activity(self, days=7):
         """Get recent activity for dashboard"""
-        conn = sqlite3.connect(self.db_path)
+        conn = self.get_connection()
         cursor = conn.cursor()
         
         # Get recent schedule changes
@@ -512,10 +471,10 @@ class DatabaseManager:
             SELECT sc.action, s.name, sc.day_of_week, sc.changed_at
             FROM schedule_changes sc
             LEFT JOIN staff s ON sc.staff_id = s.id
-            WHERE sc.changed_at >= datetime('now', '-{} days')
+            WHERE sc.changed_at >= DATE_SUB(NOW(), INTERVAL %s DAY)
             ORDER BY sc.changed_at DESC
             LIMIT 20
-        '''.format(days))
+        ''', (days,))
         
         recent_changes = cursor.fetchall()
         conn.close()

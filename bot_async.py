@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from datetime import datetime, timedelta
 import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -7,9 +8,10 @@ from telegram.ext import (
     ContextTypes, ConversationHandler, filters
 )
 from telegram.constants import ParseMode
+import os
 
 from config import BOT_TOKEN, ADMIN_IDS, DAYS_OF_WEEK
-from database import DatabaseManager
+from database_factory import get_database_manager
 from pdf_generator import PDFGenerator
 from validators import ScheduleValidator
 
@@ -25,7 +27,7 @@ MAIN_MENU, STAFF_MANAGEMENT, ADD_STAFF, REMOVE_STAFF, SCHEDULE_MENU, SCHEDULE_IN
 
 class StaffSchedulerBot:
     def __init__(self):
-        self.db = DatabaseManager()
+        self.db = get_database_manager()
         self.pdf_gen = PDFGenerator()
         self.user_states = {}  # Store user conversation states
         self.toronto_tz = pytz.timezone('America/Toronto')
@@ -42,15 +44,18 @@ class StaffSchedulerBot:
         print(f"DEBUG: /start called by user_id: {user_id}")
         print(f"DEBUG: ADMIN_IDS: {ADMIN_IDS}")
         print(f"DEBUG: Is admin? {self.is_admin(user_id)}")
+        logger.info(f"Admin bot /start received from user {user_id}")
         
         if not self.is_admin(user_id):
             print(f"DEBUG: User {user_id} is NOT authorized")
+            logger.info(f"User {user_id} is NOT authorized")
             await update.message.reply_text(
                 "❌ You are not authorized to use this bot. Please contact the administrator."
             )
             return ConversationHandler.END
         
         print(f"DEBUG: User {user_id} is authorized, showing main menu")
+        logger.info(f"User {user_id} is authorized, showing main menu")
         await self.show_main_menu(update, context)
         return MAIN_MENU
     
@@ -1687,6 +1692,7 @@ class StaffSchedulerBot:
             return await self.show_weekly_schedule_view(update, context)
         
         # Save to database with dates
+        user_id = update.effective_user.id
         for day, data in schedule_data.items():
             schedule_date = data.get('date')
             self.db.save_schedule(
@@ -1695,7 +1701,8 @@ class StaffSchedulerBot:
                 is_working=data['is_working'],
                 start_time=data.get('start_time'),
                 end_time=data.get('end_time'),
-                schedule_date=schedule_date
+                schedule_date=schedule_date,
+                changed_by=f"ADMIN_{user_id}"
             )
         
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
@@ -1973,6 +1980,8 @@ class StaffSchedulerBot:
         """Run the bot (asynchronous version)"""
         application = Application.builder().token(BOT_TOKEN).build()
         
+        # Debug message handler removed - was interfering with conversation flow
+        
         # Create conversation handler
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler("start", self.start)],
@@ -2006,14 +2015,36 @@ class StaffSchedulerBot:
                     CallbackQueryHandler(self.view_schedules)
                 ]
             },
-            fallbacks=[CommandHandler("start", self.start)]
+            fallbacks=[CommandHandler("start", self.start)],
+            per_message=False
         )
         
         application.add_handler(conv_handler)
         
-        # Start the bot with proper initialization
+        # Initialize the application
         await application.initialize()
-        await application.updater.start_polling(drop_pending_updates=True, allowed_updates=None)
+        
+        # Use manual update checking to avoid conflicts
+        logger.info("Starting bot with manual update checking (conflict-free mode)")
+        
+        # Get the bot instance
+        bot = application.bot
+        
+        # Manual update loop
+        offset = 0
+        while True:
+            try:
+                # Get updates manually
+                updates = await bot.get_updates(offset=offset, timeout=30)
+                
+                for update in updates:
+                    offset = update.update_id + 1
+                    # Process the update
+                    await application.process_update(update)
+                    
+            except Exception as e:
+                logger.error(f"Error in manual update loop: {e}")
+                await asyncio.sleep(5)  # Wait before retrying
     
     async def edit_next_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Move to edit the next day in the schedule"""
