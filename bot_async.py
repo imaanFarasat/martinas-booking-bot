@@ -1222,6 +1222,9 @@ class StaffSchedulerBot:
         if day is None:
             day = update.callback_query.data.split("_")[2]  # edit_day_Tuesday -> Tuesday
         
+        # Set the editing_day context variable for time picker functions
+        context.user_data['editing_day'] = day
+        
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
         schedule_data = context.user_data.get('schedule_data', {})
         day_data = schedule_data.get(day, {'is_working': True, 'start_time': '', 'end_time': ''})
@@ -2112,6 +2115,11 @@ class StaffSchedulerBot:
         day = context.user_data.get('editing_day')
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
         
+        # Handle case where editing_day is not set
+        if not day:
+            await update.callback_query.answer("❌ No day selected for editing")
+            return await self.show_edit_options(update, context)
+        
         text = f"🕐 *Select Start Time for {day}*\n\n"
         text += f"Staff: {staff_name}\n"
         text += f"Day: {day}\n\n"
@@ -2142,6 +2150,11 @@ class StaffSchedulerBot:
         day = context.user_data.get('editing_day')
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
         
+        # Handle case where editing_day is not set
+        if not day:
+            await update.callback_query.answer("❌ No day selected for editing")
+            return await self.show_edit_options(update, context)
+        
         text = f"🕐 *Select End Time for {day}*\n\n"
         text += f"Staff: {staff_name}\n"
         text += f"Day: {day}\n\n"
@@ -2169,6 +2182,12 @@ class StaffSchedulerBot:
     
     async def back_to_day_edit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Go back to day edit view"""
+        # Check if editing_day is set
+        editing_day = context.user_data.get('editing_day')
+        if not editing_day:
+            await update.callback_query.answer("❌ No day selected for editing")
+            return await self.show_edit_options(update, context)
+        
         return await self.show_day_edit_view(update, context)
     
     async def edit_selected_days(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
