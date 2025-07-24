@@ -91,14 +91,26 @@ class MySQLDatabaseManager:
             cursor.fetchall()  # Consume any results
             
             # Create indexes for better performance
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_staff_id ON schedules(staff_id)')
-            cursor.fetchall()  # Consume any results
+            try:
+                cursor.execute('CREATE INDEX idx_schedules_staff_id ON schedules(staff_id)')
+                cursor.fetchall()  # Consume any results
+            except mysql.connector.Error as e:
+                if e.errno != 1061:  # Error 1061 = Duplicate key name (index already exists)
+                    raise
             
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_day ON schedules(day_of_week)')
-            cursor.fetchall()  # Consume any results
+            try:
+                cursor.execute('CREATE INDEX idx_schedules_day ON schedules(day_of_week)')
+                cursor.fetchall()  # Consume any results
+            except mysql.connector.Error as e:
+                if e.errno != 1061:  # Error 1061 = Duplicate key name (index already exists)
+                    raise
             
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(schedule_date)')
-            cursor.fetchall()  # Consume any results
+            try:
+                cursor.execute('CREATE INDEX idx_schedules_date ON schedules(schedule_date)')
+                cursor.fetchall()  # Consume any results
+            except mysql.connector.Error as e:
+                if e.errno != 1061:  # Error 1061 = Duplicate key name (index already exists)
+                    raise
             
             conn.commit()
             
