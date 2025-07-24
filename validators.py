@@ -93,10 +93,90 @@ class ScheduleValidator:
         return True, ""
     
     @staticmethod
+    def _format_time_value(time_value):
+        """Convert time value (timedelta, string, or None) to HH:MM format
+        
+        This is a duplicate of the bot's format_time_for_display function
+        to ensure consistent time handling across validation
+        """
+        if not time_value:
+            return None
+        
+        try:
+            # Case 1: MySQL timedelta object
+            if hasattr(time_value, 'total_seconds'):
+                total_seconds = int(time_value.total_seconds())
+                if total_seconds < 0:
+                    return None
+                
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                
+                if 0 <= hours <= 23 and 0 <= minutes <= 59:
+                    return f"{hours:02d}:{minutes:02d}"
+                else:
+                    return None
+            
+            # Case 2: String formats
+            elif isinstance(time_value, str):
+                time_str = time_value.strip()
+                if not time_str:
+                    return None
+                
+                if ':' in time_str:
+                    parts = time_str.split(':')
+                    
+                    # Handle HH:MM:SS format (convert to HH:MM)
+                    if len(parts) == 3:
+                        try:
+                            hours = int(parts[0])
+                            minutes = int(parts[1])
+                            if 0 <= hours <= 23 and 0 <= minutes <= 59:
+                                return f"{hours:02d}:{minutes:02d}"
+                        except ValueError:
+                            pass
+                    
+                    # Handle HH:MM format
+                    elif len(parts) == 2:
+                        try:
+                            hours = int(parts[0])
+                            minutes = int(parts[1])
+                            if 0 <= hours <= 23 and 0 <= minutes <= 59:
+                                return f"{hours:02d}:{minutes:02d}"
+                        except ValueError:
+                            pass
+                
+                # Handle single number (assume hours)
+                else:
+                    try:
+                        hours = int(time_str)
+                        if 0 <= hours <= 23:
+                            return f"{hours:02d}:00"
+                    except ValueError:
+                        pass
+                
+                return None
+            
+            # Case 3: Other types (datetime.time, etc.)
+            elif hasattr(time_value, 'hour') and hasattr(time_value, 'minute'):
+                return f"{time_value.hour:02d}:{time_value.minute:02d}"
+            
+            else:
+                # Try to convert to string and parse
+                str_value = str(time_value).strip()
+                if str_value and str_value != 'None':
+                    return ScheduleValidator._format_time_value(str_value)
+                
+                return None
+        
+        except Exception:
+            return None
+    
+    @staticmethod
     def validate_schedule_data(schedule_data):
         """
-        Validate complete schedule data for a staff member
-        Returns: (is_valid, error_messages)
+        Validate complete schedule data for a staff member.
+        Returns (is_valid, errors_list)
         """
         errors = []
         
@@ -115,28 +195,13 @@ class ScheduleValidator:
             is_working = data['is_working']
             
             if is_working:
-                # If working, validate times (handle empty strings and timedelta objects)
+                # If working, validate times using enhanced time formatting
                 start_time_raw = data.get('start_time', '')
                 end_time_raw = data.get('end_time', '')
                 
-                # Convert timedelta objects to strings if needed
-                if hasattr(start_time_raw, 'total_seconds'):
-                    # It's a timedelta object, convert to HH:MM format
-                    total_seconds = int(start_time_raw.total_seconds())
-                    hours = total_seconds // 3600
-                    minutes = (total_seconds % 3600) // 60
-                    start_time = f"{hours:02d}:{minutes:02d}"
-                else:
-                    start_time = str(start_time_raw).strip() if start_time_raw else ''
-                
-                if hasattr(end_time_raw, 'total_seconds'):
-                    # It's a timedelta object, convert to HH:MM format
-                    total_seconds = int(end_time_raw.total_seconds())
-                    hours = total_seconds // 3600
-                    minutes = (total_seconds % 3600) // 60
-                    end_time = f"{hours:02d}:{minutes:02d}"
-                else:
-                    end_time = str(end_time_raw).strip() if end_time_raw else ''
+                # Use enhanced formatting function
+                start_time = ScheduleValidator._format_time_value(start_time_raw)
+                end_time = ScheduleValidator._format_time_value(end_time_raw)
                 
                 if not start_time or not end_time:
                     errors.append(f"{day}: Missing start or end time for working day")
@@ -146,22 +211,7 @@ class ScheduleValidator:
                 if not time_valid:
                     errors.append(f"{day}: {time_error}")
             else:
-                # If not working, times should be None or empty
-                start_time_raw = data.get('start_time', '')
-                end_time_raw = data.get('end_time', '')
-                
-                # Convert timedelta objects to strings if needed for checking
-                if hasattr(start_time_raw, 'total_seconds'):
-                    start_time = "has_time"  # Non-empty to trigger error
-                else:
-                    start_time = str(start_time_raw).strip() if start_time_raw else ''
-                
-                if hasattr(end_time_raw, 'total_seconds'):
-                    end_time = "has_time"  # Non-empty to trigger error
-                else:
-                    end_time = str(end_time_raw).strip() if end_time_raw else ''
-                
-                if start_time or end_time:
-                    errors.append(f"{day}: Should not have times when marked as Off")
+                # If not working, times should be None or empty - this is valid
+                pass
         
         return len(errors) == 0, errors 

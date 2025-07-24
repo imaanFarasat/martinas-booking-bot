@@ -1760,20 +1760,25 @@ class StaffSchedulerBot:
                     print(f"DEBUG: Successfully saved {day}")
                 else:
                     failed_saves.append(day)
-                    print(f"DEBUG: Failed to save {day}")
+                    print(f"DEBUG: Failed to save {day} - no result returned")
             except Exception as e:
                 failed_saves.append(day)
                 print(f"DEBUG: Exception saving {day}: {e}")
+                # Log the specific error for troubleshooting
+                logger.error(f"Error saving {day} for {staff_name}: {e}")
         
-        print(f"DEBUG: Saved {saved_count} days, failed: {failed_saves}")
+        print(f"DEBUG: Save complete - {saved_count} successful, {len(failed_saves)} failed")
+        if failed_saves:
+            print(f"DEBUG: Failed days: {failed_saves}")
         
         # Show appropriate success/failure message
         if failed_saves:
             failed_text = ", ".join(failed_saves)
-            text = f"⚠️ *Partial Save Complete*\n\n"
-            text += f"Saved: {saved_count} days\n"
-            text += f"Failed: {failed_text}\n\n"
-            text += f"Some changes for {staff_name} could not be saved. Please try again."
+            text = f"⚠️ *Partial Save Failed*\n\n"
+            text += f"❌ *Could not save:* {failed_text}\n"
+            text += f"✅ *Successfully saved:* {saved_count} days\n\n"
+            text += f"❗ *Database Error:* Some changes for {staff_name} could not be saved.\n"
+            text += f"Please check the console logs for details and try again."
             
             keyboard = [
                 [InlineKeyboardButton("🔄 Try Again", callback_data="save_schedule")],
@@ -1845,19 +1850,94 @@ class StaffSchedulerBot:
         return MAIN_MENU
     
     def format_time_for_display(self, time_value):
-        """Convert time value (timedelta or string) to HH:MM format for display"""
+        """Convert time value (timedelta, string, or None) to HH:MM format for display
+        
+        This function handles:
+        - MySQL timedelta objects (e.g., datetime.timedelta(seconds=18000) for 05:00:00)
+        - String time formats (e.g., "05:00", "05:00:00", "5:00")
+        - None/empty values
+        - Invalid formats
+        """
         if not time_value:
             return None
         
-        if hasattr(time_value, 'total_seconds'):
-            # It's a timedelta object from MySQL
-            total_seconds = int(time_value.total_seconds())
-            hours = total_seconds // 3600
-            minutes = (total_seconds % 3600) // 60
-            return f"{hours:02d}:{minutes:02d}"
-        else:
-            # It's already a string, return as-is
-            return str(time_value).strip() if time_value else None
+        try:
+            # Case 1: MySQL timedelta object
+            if hasattr(time_value, 'total_seconds'):
+                total_seconds = int(time_value.total_seconds())
+                # Handle negative timedeltas (shouldn't happen but being safe)
+                if total_seconds < 0:
+                    return None
+                
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                
+                # Ensure valid time range (0-23 hours, 0-59 minutes)
+                if 0 <= hours <= 23 and 0 <= minutes <= 59:
+                    return f"{hours:02d}:{minutes:02d}"
+                else:
+                    print(f"DEBUG: Invalid time from timedelta: {hours}:{minutes}")
+                    return None
+            
+            # Case 2: String formats
+            elif isinstance(time_value, str):
+                time_str = time_value.strip()
+                if not time_str:
+                    return None
+                
+                # Handle various string formats
+                if ':' in time_str:
+                    parts = time_str.split(':')
+                    
+                    # Handle HH:MM:SS format (convert to HH:MM)
+                    if len(parts) == 3:
+                        try:
+                            hours = int(parts[0])
+                            minutes = int(parts[1])
+                            # Ignore seconds part
+                            if 0 <= hours <= 23 and 0 <= minutes <= 59:
+                                return f"{hours:02d}:{minutes:02d}"
+                        except ValueError:
+                            pass
+                    
+                    # Handle HH:MM format
+                    elif len(parts) == 2:
+                        try:
+                            hours = int(parts[0])
+                            minutes = int(parts[1])
+                            if 0 <= hours <= 23 and 0 <= minutes <= 59:
+                                return f"{hours:02d}:{minutes:02d}"
+                        except ValueError:
+                            pass
+                
+                # Handle single number (assume hours)
+                else:
+                    try:
+                        hours = int(time_str)
+                        if 0 <= hours <= 23:
+                            return f"{hours:02d}:00"
+                    except ValueError:
+                        pass
+                
+                print(f"DEBUG: Could not parse time string: '{time_str}'")
+                return None
+            
+            # Case 3: Other types (datetime.time, etc.)
+            elif hasattr(time_value, 'hour') and hasattr(time_value, 'minute'):
+                # datetime.time object
+                return f"{time_value.hour:02d}:{time_value.minute:02d}"
+            
+            else:
+                # Try to convert to string and parse
+                str_value = str(time_value).strip()
+                if str_value and str_value != 'None':
+                    return self.format_time_for_display(str_value)
+                
+                return None
+        
+        except Exception as e:
+            print(f"DEBUG: Error formatting time value '{time_value}' (type: {type(time_value)}): {e}")
+            return None
     
     async def view_schedules(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """View all current schedules with quick access"""

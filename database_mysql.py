@@ -17,14 +17,16 @@ class MySQLDatabaseManager:
         self.init_database()
     
     def get_connection(self):
-        """Get MySQL connection"""
+        """Get MySQL connection with proper transaction support"""
         return mysql.connector.connect(
             host=self.host,
             port=self.port,
             user=self.user,
             password=self.password,
             database=self.database,
-            autocommit=True
+            autocommit=False,  # Enable proper transaction control
+            use_unicode=True,
+            charset='utf8mb4'
         )
     
     def init_database(self):
@@ -156,53 +158,123 @@ class MySQLDatabaseManager:
             conn.close()
     
     def remove_staff(self, staff_id):
-        """Remove a staff member and their schedules"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # Get staff name before deletion for logging
-        cursor.execute('SELECT name FROM staff WHERE id = %s', (staff_id,))
-        staff_name = cursor.fetchone()
-        staff_name = staff_name[0] if staff_name else "Unknown"
-        
-        # Log the staff removal
-        cursor.execute('''
-            INSERT INTO schedule_changes (staff_id, action, old_data, changed_by)
-            VALUES (%s, %s, %s, %s)
-        ''', (staff_id, 'REMOVE_STAFF', json.dumps({'name': staff_name}), 'ADMIN'))
-        
-        # Remove staff (schedules will be removed by CASCADE)
-        cursor.execute('DELETE FROM staff WHERE id = %s', (staff_id,))
-        
-        conn.commit()
-        conn.close()
-        logger.info(f"Staff member '{staff_name}' (ID: {staff_id}) removed")
-    
-    def get_all_staff(self):
-        """Get all staff members"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, name FROM staff ORDER BY name')
-        staff = cursor.fetchall()
-        conn.close()
-        return staff
-    
-    def get_staff_by_id(self, staff_id):
-        """Get staff member by ID"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, name FROM staff WHERE id = %s', (staff_id,))
-        staff = cursor.fetchone()
-        conn.close()
-        return staff
-    
-    def save_schedule(self, staff_id, day_of_week, is_working, start_time=None, end_time=None, schedule_date=None, changed_by="ADMIN"):
-        """Save or update a schedule for a staff member"""
+        """Remove a staff member and their schedules with proper transaction handling"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         try:
-            # Get existing schedule data for logging (include schedule_date in WHERE clause)
+            # Start transaction
+            conn.start_transaction()
+            
+            # Get staff name before deletion for logging
+            cursor.execute('SELECT name FROM staff WHERE id = %s', (staff_id,))
+            staff_record = cursor.fetchone()
+            
+            if not staff_record:
+                raise ValueError(f"Staff member with ID {staff_id} not found")
+                
+            staff_name = staff_record[0]
+            
+            # Log the staff removal
+            cursor.execute('''
+                INSERT INTO schedule_changes (staff_id, action, old_data, changed_by)
+                VALUES (%s, %s, %s, %s)
+            ''', (staff_id, 'REMOVE_STAFF', json.dumps({'name': staff_name}), 'ADMIN'))
+            
+            # Remove staff (schedules will be removed by CASCADE)
+            cursor.execute('DELETE FROM staff WHERE id = %s', (staff_id,))
+            
+            conn.commit()
+            logger.info(f"Staff member '{staff_name}' with ID {staff_id} removed")
+            print(f"SUCCESS: Staff member '{staff_name}' removed")
+            
+        except Exception as e:
+            conn.rollback()
+            error_msg = f"Error removing staff with ID {staff_id}: {e}"
+            logger.error(error_msg)
+            print(f"ERROR: {error_msg}")
+            raise Exception(error_msg)
+            
+        finally:
+            cursor.close()
+            conn.close()
+    
+    def get_all_staff(self):
+        """Get all staff members with proper transaction handling"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT id, name FROM staff ORDER BY name')
+            staff = cursor.fetchall()
+            conn.commit()  # Commit the read transaction
+            return staff
+            
+        except Exception as e:
+            conn.rollback()
+            error_msg = f"Error fetching all staff: {e}"
+            logger.error(error_msg)
+            print(f"ERROR: {error_msg}")
+            raise Exception(error_msg)
+            
+        finally:
+            cursor.close()
+            conn.close()
+    
+    def get_staff_by_id(self, staff_id):
+        """Get staff member by ID with proper transaction handling"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT id, name FROM staff WHERE id = %s', (staff_id,))
+            staff = cursor.fetchone()
+            conn.commit()  # Commit the read transaction
+            return staff
+            
+        except Exception as e:
+            conn.rollback()
+            error_msg = f"Error fetching staff by ID {staff_id}: {e}"
+            logger.error(error_msg)
+            print(f"ERROR: {error_msg}")
+            raise Exception(error_msg)
+            
+        finally:
+            cursor.close()
+            conn.close()
+    
+    def save_schedule(self, staff_id, day_of_week, is_working, start_time=None, end_time=None, schedule_date=None, changed_by="ADMIN"):
+        """Save or update a schedule for a staff member with proper transaction management"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Start explicit transaction
+            conn.start_transaction()
+            
+            # Validate inputs
+            if not isinstance(staff_id, int) or staff_id <= 0:
+                raise ValueError(f"Invalid staff_id: {staff_id}")
+            
+            if day_of_week not in ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']:
+                raise ValueError(f"Invalid day_of_week: {day_of_week}")
+            
+            # Validate time formats if working
+            if is_working and (start_time or end_time):
+                if start_time and not self._validate_time_string(start_time):
+                    raise ValueError(f"Invalid start_time format: {start_time}")
+                if end_time and not self._validate_time_string(end_time):
+                    raise ValueError(f"Invalid end_time format: {end_time}")
+            
+            # Verify staff exists
+            cursor.execute('SELECT id, name FROM staff WHERE id = %s', (staff_id,))
+            staff_record = cursor.fetchone()
+            if not staff_record:
+                raise ValueError(f"Staff member with ID {staff_id} not found")
+            
+            staff_name = staff_record[1]
+            
+            # Get existing schedule data for logging
             if schedule_date:
                 cursor.execute('''
                     SELECT is_working, start_time, end_time 
@@ -215,30 +287,26 @@ class MySQLDatabaseManager:
                     FROM schedules 
                     WHERE staff_id = %s AND day_of_week = %s AND schedule_date IS NULL
                 ''', (staff_id, day_of_week))
-            existing = cursor.fetchone()
             
-            # Consume any remaining results
-            cursor.fetchall()
+            existing = cursor.fetchone()
             
             # Prepare new data for logging
             new_data = {
-                'is_working': is_working,
+                'is_working': bool(is_working),
                 'start_time': str(start_time) if start_time else None,
                 'end_time': str(end_time) if end_time else None,
                 'schedule_date': str(schedule_date) if schedule_date else None
             }
             
-            # Log the change with proper old/new data comparison
+            # Check if there's actually a change
             if existing:
                 old_data = {
-                    'is_working': existing[0],
+                    'is_working': bool(existing[0]),
                     'start_time': str(existing[1]) if existing[1] else None,
                     'end_time': str(existing[2]) if existing[2] else None,
                     'schedule_date': str(schedule_date) if schedule_date else None
                 }
-                action = 'UPDATE_SCHEDULE'
                 
-                # Check if there's actually a change
                 has_changes = (
                     old_data['is_working'] != new_data['is_working'] or
                     old_data['start_time'] != new_data['start_time'] or
@@ -246,10 +314,12 @@ class MySQLDatabaseManager:
                 )
                 
                 if not has_changes:
-                    # No changes detected, still return success but log it
-                    print(f"DEBUG: No changes detected for {staff_id} on {day_of_week}")
-                    conn.commit()
+                    # No changes detected, still return success
+                    print(f"DEBUG: No changes detected for {staff_name} ({staff_id}) on {day_of_week}")
+                    conn.commit()  # Commit the read transaction
                     return True
+                
+                action = 'UPDATE_SCHEDULE'
             else:
                 old_data = None
                 action = 'ADD_SCHEDULE'
@@ -261,96 +331,193 @@ class MySQLDatabaseManager:
                 VALUES (%s, %s, %s, %s, %s, %s)
             ''', (staff_id, day_of_week, schedule_date, is_working, start_time, end_time))
             
-            # Consume any remaining results
-            cursor.fetchall()
-            
-            # Log the schedule change with timestamp
+            # Log the schedule change
             cursor.execute('''
                 INSERT INTO schedule_changes (staff_id, action, day_of_week, old_data, new_data, changed_by)
                 VALUES (%s, %s, %s, %s, %s, %s)
             ''', (staff_id, action, day_of_week, json.dumps(old_data) if old_data else None, json.dumps(new_data), changed_by))
             
-            # Consume any remaining results
-            cursor.fetchall()
-            
+            # Commit the transaction
             conn.commit()
             
-        except Exception as e:
+            # Log success
+            if existing:
+                logger.info(f"Schedule updated for '{staff_name}' on {day_of_week}: {start_time}-{end_time}")
+                print(f"SUCCESS: Schedule UPDATED for {staff_name} on {day_of_week}: {start_time}-{end_time}")
+            else:
+                logger.info(f"Schedule added for '{staff_name}' on {day_of_week}: {start_time}-{end_time}")
+                print(f"SUCCESS: Schedule ADDED for {staff_name} on {day_of_week}: {start_time}-{end_time}")
+            
+            return True
+            
+        except mysql.connector.Error as db_error:
+            # MySQL-specific error
             conn.rollback()
-            print(f"Error saving schedule: {e}")
-            raise
+            error_msg = f"MySQL error saving schedule for staff_id {staff_id} on {day_of_week}: {db_error}"
+            logger.error(error_msg)
+            print(f"ERROR: {error_msg}")
+            raise Exception(error_msg)
+            
+        except ValueError as val_error:
+            # Validation error
+            conn.rollback()
+            error_msg = f"Validation error saving schedule: {val_error}"
+            logger.error(error_msg)
+            print(f"ERROR: {error_msg}")
+            raise Exception(error_msg)
+            
+        except Exception as e:
+            # General error
+            conn.rollback()
+            error_msg = f"Unexpected error saving schedule for staff_id {staff_id} on {day_of_week}: {e}"
+            logger.error(error_msg)
+            print(f"ERROR: {error_msg}")
+            raise Exception(error_msg)
+            
         finally:
             cursor.close()
             conn.close()
-        
-        # Get staff name for logging
-        staff_name = self.get_staff_by_id(staff_id)
-        staff_name = staff_name[1] if staff_name else "Unknown"
-        
-        if existing:
-            logger.info(f"Schedule updated for '{staff_name}' on {day_of_week}: {start_time}-{end_time}")
-        else:
-            logger.info(f"Schedule added for '{staff_name}' on {day_of_week}: {start_time}-{end_time}")
-        
-        return True
+    
+    def _validate_time_string(self, time_str):
+        """Validate time string format (HH:MM)"""
+        try:
+            if not time_str:
+                return True  # Empty is valid for optional times
+            
+            if not isinstance(time_str, str):
+                return False
+                
+            parts = time_str.split(':')
+            if len(parts) != 2:
+                return False
+                
+            hours, minutes = int(parts[0]), int(parts[1])
+            return 0 <= hours <= 23 and 0 <= minutes <= 59
+            
+        except (ValueError, AttributeError):
+            return False
     
     def get_staff_schedule(self, staff_id):
-        """Get complete schedule for a staff member"""
+        """Get complete schedule for a staff member with proper transaction handling"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT day_of_week, is_working, start_time, end_time 
-            FROM schedules 
-            WHERE staff_id = %s 
-            ORDER BY FIELD(day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
-        ''', (staff_id,))
-        schedule = cursor.fetchall()
-        conn.close()
-        return schedule
+        
+        try:
+            print(f"DEBUG: get_staff_schedule - Fetching schedule for staff_id {staff_id}")
+            cursor.execute('''
+                SELECT day_of_week, is_working, start_time, end_time 
+                FROM schedules 
+                WHERE staff_id = %s 
+                ORDER BY FIELD(day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
+            ''', (staff_id,))
+            schedule = cursor.fetchall()
+            conn.commit()  # Commit the read transaction
+            
+            print(f"DEBUG: get_staff_schedule - Found {len(schedule)} schedule entries for staff_id {staff_id}")
+            if schedule:
+                print(f"DEBUG: get_staff_schedule - Sample: {schedule[:2]}")
+            
+            return schedule
+            
+        except Exception as e:
+            conn.rollback()
+            error_msg = f"Error fetching schedule for staff_id {staff_id}: {e}"
+            logger.error(error_msg)
+            print(f"ERROR: {error_msg}")
+            raise Exception(error_msg)
+            
+        finally:
+            cursor.close()
+            conn.close()
     
     def get_all_schedules(self):
-        """Get all schedules for all staff"""
+        """Get all schedules for all staff with proper transaction handling"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT s.name, sch.day_of_week, sch.schedule_date, sch.is_working, sch.start_time, sch.end_time
-            FROM staff s
-            LEFT JOIN schedules sch ON s.id = sch.staff_id
-            ORDER BY s.name, FIELD(sch.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
-        ''')
-        schedules = cursor.fetchall()
-        conn.close()
-        return schedules
+        
+        try:
+            print(f"DEBUG: get_all_schedules - Starting database fetch")
+            cursor.execute('''
+                SELECT s.name, sch.day_of_week, sch.schedule_date, sch.is_working, sch.start_time, sch.end_time
+                FROM staff s
+                LEFT JOIN schedules sch ON s.id = sch.staff_id
+                ORDER BY s.name, FIELD(sch.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
+            ''')
+            schedules = cursor.fetchall()
+            conn.commit()  # Commit the read transaction
+            
+            print(f"DEBUG: get_all_schedules - Fetched {len(schedules)} schedule records")
+            if schedules:
+                print(f"DEBUG: get_all_schedules - Sample records: {schedules[:3]}")
+            
+            return schedules
+            
+        except Exception as e:
+            conn.rollback()
+            error_msg = f"Error fetching all schedules: {e}"
+            logger.error(error_msg)
+            print(f"ERROR: {error_msg}")
+            raise Exception(error_msg)
+            
+        finally:
+            cursor.close()
+            conn.close()
     
     def get_staff_with_complete_schedules(self):
-        """Get staff who have complete weekly schedules"""
+        """Get staff who have complete weekly schedules with proper transaction handling"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT s.id, s.name, COUNT(sch.day_of_week) as schedule_count
-            FROM staff s
-            LEFT JOIN schedules sch ON s.id = sch.staff_id
-            GROUP BY s.id, s.name
-            HAVING schedule_count = 7
-        ''')
-        staff_with_schedules = cursor.fetchall()
-        conn.close()
-        return staff_with_schedules
+        
+        try:
+            cursor.execute('''
+                SELECT s.id, s.name, COUNT(sch.day_of_week) as schedule_count
+                FROM staff s
+                LEFT JOIN schedules sch ON s.id = sch.staff_id
+                GROUP BY s.id, s.name
+                HAVING schedule_count = 7
+            ''')
+            staff_with_schedules = cursor.fetchall()
+            conn.commit()  # Commit the read transaction
+            return staff_with_schedules
+            
+        except Exception as e:
+            conn.rollback()
+            error_msg = f"Error fetching staff with complete schedules: {e}"
+            logger.error(error_msg)
+            print(f"ERROR: {error_msg}")
+            raise Exception(error_msg)
+            
+        finally:
+            cursor.close()
+            conn.close()
     
     def get_staff_without_complete_schedules(self):
-        """Get staff who don't have complete weekly schedules"""
+        """Get staff who don't have complete weekly schedules with proper transaction handling"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute('''
-            SELECT s.id, s.name, COUNT(sch.day_of_week) as schedule_count
-            FROM staff s
-            LEFT JOIN schedules sch ON s.id = sch.staff_id
-            GROUP BY s.id, s.name
-            HAVING schedule_count < 7
-        ''')
-        staff_without_schedules = cursor.fetchall()
-        conn.close()
-        return staff_without_schedules
+        
+        try:
+            cursor.execute('''
+                SELECT s.id, s.name, COUNT(sch.day_of_week) as schedule_count
+                FROM staff s
+                LEFT JOIN schedules sch ON s.id = sch.staff_id
+                GROUP BY s.id, s.name
+                HAVING schedule_count < 7
+            ''')
+            staff_without_schedules = cursor.fetchall()
+            conn.commit()  # Commit the read transaction
+            return staff_without_schedules
+            
+        except Exception as e:
+            conn.rollback()
+            error_msg = f"Error fetching staff without complete schedules: {e}"
+            logger.error(error_msg)
+            print(f"ERROR: {error_msg}")
+            raise Exception(error_msg)
+            
+        finally:
+            cursor.close()
+            conn.close()
     
     def get_schedule_changes(self, staff_id=None, limit=50):
         """Get schedule change history with optional staff filter"""
