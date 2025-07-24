@@ -288,11 +288,20 @@ class MySQLDatabaseManager:
             conn.close()
     
     def save_schedule(self, staff_id, day_of_week, is_working, start_time=None, end_time=None, schedule_date=None, changed_by="ADMIN"):
-        """Save or update a schedule for a staff member with proper transaction management"""
+        """Save or update a schedule for a staff member with proper transaction management and verification"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         try:
+            print(f"DEBUG: Starting save_schedule for staff_id={staff_id}, day={day_of_week}, working={is_working}, start={start_time}, end={end_time}")
+            
+            # Explicitly start transaction with proper isolation
+            cursor.execute("START TRANSACTION")
+            try:
+                cursor.fetchall()
+            except:
+                pass
+            
             # Validate inputs
             if not isinstance(staff_id, int) or staff_id <= 0:
                 raise ValueError(f"Invalid staff_id: {staff_id}")
@@ -310,7 +319,6 @@ class MySQLDatabaseManager:
             # Verify staff exists
             cursor.execute('SELECT id, name FROM staff WHERE id = %s', (staff_id,))
             staff_record = cursor.fetchone()
-            # Consume any remaining results
             try:
                 cursor.fetchall()
             except:
@@ -320,6 +328,7 @@ class MySQLDatabaseManager:
                 raise ValueError(f"Staff member with ID {staff_id} not found")
             
             staff_name = staff_record[1]
+            print(f"DEBUG: Verified staff exists: {staff_name}")
             
             # Get existing schedule data for logging
             if schedule_date:
@@ -336,11 +345,12 @@ class MySQLDatabaseManager:
                 ''', (staff_id, day_of_week))
             
             existing = cursor.fetchone()
-            # Consume any remaining results
             try:
                 cursor.fetchall()
             except:
                 pass
+            
+            print(f"DEBUG: Existing data: {existing}")
             
             # Prepare new data for logging
             new_data = {
@@ -366,41 +376,91 @@ class MySQLDatabaseManager:
                 )
                 
                 if not has_changes:
-                    # No changes detected, still return success
                     print(f"DEBUG: No changes detected for {staff_name} ({staff_id}) on {day_of_week}")
-                    conn.commit()  # Commit the read transaction
+                    cursor.execute("COMMIT")
+                    try:
+                        cursor.fetchall()
+                    except:
+                        pass
                     return True
                 
                 action = 'UPDATE_SCHEDULE'
+                print(f"DEBUG: Will UPDATE existing schedule")
             else:
                 old_data = None
                 action = 'ADD_SCHEDULE'
+                print(f"DEBUG: Will ADD new schedule")
             
-            # REPLACE INTO ensures the latest save replaces any existing data
+            # Use REPLACE INTO to ensure data is saved
+            print(f"DEBUG: Executing REPLACE INTO with data: staff_id={staff_id}, day={day_of_week}, date={schedule_date}, working={is_working}, start={start_time}, end={end_time}")
             cursor.execute('''
                 REPLACE INTO schedules 
                 (staff_id, day_of_week, schedule_date, is_working, start_time, end_time)
                 VALUES (%s, %s, %s, %s, %s, %s)
             ''', (staff_id, day_of_week, schedule_date, is_working, start_time, end_time))
-            # Consume any results from REPLACE INTO
             try:
                 cursor.fetchall()
             except:
                 pass
+            print(f"DEBUG: REPLACE INTO executed successfully")
             
             # Log the schedule change
             cursor.execute('''
                 INSERT INTO schedule_changes (staff_id, action, day_of_week, old_data, new_data, changed_by)
                 VALUES (%s, %s, %s, %s, %s, %s)
             ''', (staff_id, action, day_of_week, json.dumps(old_data) if old_data else None, json.dumps(new_data), changed_by))
-            # Consume any results from INSERT
+            try:
+                cursor.fetchall()
+            except:
+                pass
+            print(f"DEBUG: Change log inserted")
+            
+            # Explicitly commit the transaction
+            print(f"DEBUG: Committing transaction...")
+            cursor.execute("COMMIT")
+            try:
+                cursor.fetchall()
+            except:
+                pass
+            print(f"DEBUG: Transaction committed successfully")
+            
+            # VERIFICATION: Read back the data to confirm it was saved
+            print(f"DEBUG: Verifying save by reading back data...")
+            if schedule_date:
+                cursor.execute('''
+                    SELECT is_working, start_time, end_time 
+                    FROM schedules 
+                    WHERE staff_id = %s AND day_of_week = %s AND schedule_date = %s
+                ''', (staff_id, day_of_week, schedule_date))
+            else:
+                cursor.execute('''
+                    SELECT is_working, start_time, end_time 
+                    FROM schedules 
+                    WHERE staff_id = %s AND day_of_week = %s AND schedule_date IS NULL
+                ''', (staff_id, day_of_week))
+            
+            verification = cursor.fetchone()
             try:
                 cursor.fetchall()
             except:
                 pass
             
-            # Commit the transaction
-            conn.commit()
+            if verification:
+                saved_working, saved_start, saved_end = verification
+                print(f"DEBUG: VERIFICATION SUCCESS - Data in DB: working={saved_working}, start={saved_start}, end={saved_end}")
+                
+                # Verify the data matches what we intended to save
+                if (bool(saved_working) == bool(is_working) and 
+                    str(saved_start or '') == str(start_time or '') and 
+                    str(saved_end or '') == str(end_time or '')):
+                    print(f"SUCCESS: Data verified - save is persistent in database")
+                else:
+                    print(f"WARNING: Data mismatch after save!")
+                    print(f"  Expected: working={is_working}, start={start_time}, end={end_time}")
+                    print(f"  Found in DB: working={saved_working}, start={saved_start}, end={saved_end}")
+            else:
+                print(f"ERROR: VERIFICATION FAILED - No data found after save!")
+                raise Exception("Save verification failed - data not found in database")
             
             # Log success
             if existing:
@@ -414,6 +474,12 @@ class MySQLDatabaseManager:
             
         except mysql.connector.Error as db_error:
             # MySQL-specific error
+            print(f"DEBUG: MySQL error occurred, rolling back...")
+            try:
+                cursor.execute("ROLLBACK")
+                cursor.fetchall()
+            except:
+                pass
             conn.rollback()
             error_msg = f"MySQL error saving schedule for staff_id {staff_id} on {day_of_week}: {db_error}"
             logger.error(error_msg)
@@ -422,6 +488,12 @@ class MySQLDatabaseManager:
             
         except ValueError as val_error:
             # Validation error
+            print(f"DEBUG: Validation error occurred, rolling back...")
+            try:
+                cursor.execute("ROLLBACK")
+                cursor.fetchall()
+            except:
+                pass
             conn.rollback()
             error_msg = f"Validation error saving schedule: {val_error}"
             logger.error(error_msg)
@@ -430,6 +502,12 @@ class MySQLDatabaseManager:
             
         except Exception as e:
             # General error
+            print(f"DEBUG: General error occurred, rolling back...")
+            try:
+                cursor.execute("ROLLBACK")
+                cursor.fetchall()
+            except:
+                pass
             conn.rollback()
             error_msg = f"Unexpected error saving schedule for staff_id {staff_id} on {day_of_week}: {e}"
             logger.error(error_msg)
@@ -439,6 +517,7 @@ class MySQLDatabaseManager:
         finally:
             cursor.close()
             conn.close()
+            print(f"DEBUG: Database connection closed")
     
     def _validate_time_string(self, time_str):
         """Validate time string format (HH:MM)"""
@@ -460,12 +539,27 @@ class MySQLDatabaseManager:
             return False
     
     def get_staff_schedule(self, staff_id):
-        """Get complete schedule for a staff member with proper transaction handling"""
+        """Get complete schedule for a staff member with proper transaction handling and fresh data"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         try:
-            print(f"DEBUG: get_staff_schedule - Fetching schedule for staff_id {staff_id}")
+            print(f"DEBUG: get_staff_schedule - Fetching FRESH schedule for staff_id {staff_id}")
+            
+            # Ensure we get the most current data by starting a new transaction
+            cursor.execute("START TRANSACTION")
+            try:
+                cursor.fetchall()
+            except:
+                pass
+            
+            # Set transaction isolation to read committed data
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+            try:
+                cursor.fetchall()
+            except:
+                pass
+            
             cursor.execute('''
                 SELECT day_of_week, is_working, start_time, end_time 
                 FROM schedules 
@@ -473,15 +567,30 @@ class MySQLDatabaseManager:
                 ORDER BY FIELD(day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
             ''', (staff_id,))
             schedule = cursor.fetchall()
-            conn.commit()  # Commit the read transaction
+            
+            # Commit to ensure we read the latest committed data
+            cursor.execute("COMMIT")
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             print(f"DEBUG: get_staff_schedule - Found {len(schedule)} schedule entries for staff_id {staff_id}")
             if schedule:
-                print(f"DEBUG: get_staff_schedule - Sample: {schedule[:2]}")
+                print(f"DEBUG: get_staff_schedule - Sample data: {schedule[:2]}")
+                for day, is_working, start_time, end_time in schedule:
+                    print(f"DEBUG:   {day}: working={is_working}, start={start_time}, end={end_time}")
+            else:
+                print(f"DEBUG: get_staff_schedule - NO SCHEDULE DATA FOUND for staff_id {staff_id}")
             
             return schedule
             
         except Exception as e:
+            try:
+                cursor.execute("ROLLBACK")
+                cursor.fetchall()
+            except:
+                pass
             conn.rollback()
             error_msg = f"Error fetching schedule for staff_id {staff_id}: {e}"
             logger.error(error_msg)
@@ -493,12 +602,27 @@ class MySQLDatabaseManager:
             conn.close()
     
     def get_all_schedules(self):
-        """Get all schedules for all staff with proper transaction handling"""
+        """Get all schedules for all staff with proper transaction handling and fresh data"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         try:
-            print(f"DEBUG: get_all_schedules - Starting database fetch")
+            print(f"DEBUG: get_all_schedules - Starting FRESH database fetch")
+            
+            # Ensure we get the most current data
+            cursor.execute("START TRANSACTION")
+            try:
+                cursor.fetchall()
+            except:
+                pass
+            
+            # Set transaction isolation to read committed data
+            cursor.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+            try:
+                cursor.fetchall()
+            except:
+                pass
+            
             cursor.execute('''
                 SELECT s.name, sch.day_of_week, sch.schedule_date, sch.is_working, sch.start_time, sch.end_time
                 FROM staff s
@@ -506,15 +630,31 @@ class MySQLDatabaseManager:
                 ORDER BY s.name, FIELD(sch.day_of_week, 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday')
             ''')
             schedules = cursor.fetchall()
-            conn.commit()  # Commit the read transaction
             
-            print(f"DEBUG: get_all_schedules - Fetched {len(schedules)} schedule records")
+            # Commit to ensure we read the latest committed data
+            cursor.execute("COMMIT")
+            try:
+                cursor.fetchall()
+            except:
+                pass
+            
+            print(f"DEBUG: get_all_schedules - Fetched {len(schedules)} schedule records from database")
             if schedules:
-                print(f"DEBUG: get_all_schedules - Sample records: {schedules[:3]}")
+                print(f"DEBUG: get_all_schedules - Sample records from DB:")
+                for i, record in enumerate(schedules[:5]):  # Show first 5 records
+                    staff_name, day, schedule_date, is_working, start_time, end_time = record
+                    print(f"DEBUG:   {i+1}. {staff_name} {day}: working={is_working}, start={start_time}, end={end_time}")
+            else:
+                print(f"DEBUG: get_all_schedules - NO SCHEDULE DATA FOUND in database")
             
             return schedules
             
         except Exception as e:
+            try:
+                cursor.execute("ROLLBACK")
+                cursor.fetchall()
+            except:
+                pass
             conn.rollback()
             error_msg = f"Error fetching all schedules: {e}"
             logger.error(error_msg)
