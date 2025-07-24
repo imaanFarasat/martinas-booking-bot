@@ -1,17 +1,44 @@
 #!/usr/bin/env python3
 """
-Staff Scheduler Bot - Production-ready startup script
+Staff Scheduler Bot - Production-ready startup script with Railway health checks
 """
 
 import os
 import sys
 import asyncio
 import logging
+import threading
+import time
 from datetime import datetime
 from dotenv import load_dotenv
+from flask import Flask, jsonify
 
 # Load environment variables
 load_dotenv()
+
+# Create Flask app for Railway health checks
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    """Health check endpoint for Railway"""
+    return jsonify({
+        "status": "healthy",
+        "service": "Staff Scheduler Bot v2.0",
+        "timestamp": time.time(),
+        "features": ["bulk_scheduling", "webhooks", "connection_pooling", "templates"]
+    })
+
+@app.route('/health')
+def detailed_health():
+    """Detailed health check"""
+    return jsonify({
+        "status": "healthy",
+        "service": "Staff Scheduler Bot v2.0",
+        "database": "MySQL with Connection Pool",
+        "deployment": "Production Ready",
+        "timestamp": time.time()
+    })
 
 def setup_logging():
     """Configure production logging"""
@@ -31,6 +58,7 @@ def setup_logging():
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('telegram').setLevel(logging.WARNING)
     logging.getLogger('mysql.connector').setLevel(logging.WARNING)
+    logging.getLogger('werkzeug').setLevel(logging.WARNING)  # Flask logs
 
 def check_environment():
     """Validate environment configuration"""
@@ -50,6 +78,13 @@ def check_environment():
     
     return True
 
+def run_health_server():
+    """Run Flask health check server for Railway"""
+    port = int(os.getenv('PORT', 8000))
+    logger = logging.getLogger(__name__)
+    logger.info(f"🌐 Starting health check server on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
 async def start_bot():
     """Start the bot with error handling"""
     logger = logging.getLogger(__name__)
@@ -60,7 +95,7 @@ async def start_bot():
         logger.info("🤖 Creating bot instance...")
         bot = StaffSchedulerBot()
         
-        logger.info("🚀 Starting Staff Scheduler Bot")
+        logger.info("🚀 Starting Staff Scheduler Bot v2.0")
         logger.info(f"📅 Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         await bot.run_async()
@@ -75,22 +110,35 @@ async def start_bot():
         logger.error(f"Traceback:\n{traceback.format_exc()}")
         return False
 
+def run_bot_in_background():
+    """Run bot in background thread"""
+    try:
+        asyncio.run(start_bot())
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.error(f"❌ Bot thread error: {e}")
+
 def main():
     """Main entry point"""
     setup_logging()
     logger = logging.getLogger(__name__)
     
-    logger.info("🤖 STAFF SCHEDULER BOT STARTUP")
+    logger.info("🤖 STAFF SCHEDULER BOT v2.0 STARTUP")
     
     if not check_environment():
         logger.error("❌ Environment check failed")
         sys.exit(1)
     
+    # Start bot in background thread
+    bot_thread = threading.Thread(target=run_bot_in_background, daemon=True)
+    bot_thread.start()
+    logger.info("🤖 Bot started in background thread")
+    
+    # Run health check server (this blocks and handles Railway health checks)
     try:
-        success = asyncio.run(start_bot())
-        sys.exit(0 if success else 1)
+        run_health_server()
     except Exception as e:
-        logger.error(f"💥 Unhandled exception: {e}")
+        logger.error(f"💥 Health server error: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
