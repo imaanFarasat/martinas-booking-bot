@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Conversation states
-MAIN_MENU, STAFF_MANAGEMENT, ADD_STAFF, REMOVE_STAFF, SCHEDULE_MENU, SCHEDULE_INPUT, BULK_ADD_COUNT, BULK_ADD_NAMES, VIEW_SCHEDULES = range(9)
+MAIN_MENU, STAFF_MANAGEMENT, ADD_STAFF, REMOVE_STAFF, SCHEDULE_MENU, SCHEDULE_INPUT, BULK_ADD_COUNT, BULK_ADD_NAMES, VIEW_SCHEDULES, BULK_SCHEDULE, WEEKLY_STATS, SCHEDULE_TEMPLATES, SCHEDULE_HISTORY = range(13)
 
 class StaffSchedulerBot:
     def __init__(self):
@@ -116,15 +116,19 @@ class StaffSchedulerBot:
             print(f"DEBUG: export_pdf button clicked by user_id: {user_id}")
             return await self.export_pdf(update, context)
         elif query.data == "bulk_schedule":
-            return await self.show_bulk_schedule_menu(update, context)
+            await self.show_bulk_schedule_menu(update, context)
+            return BULK_SCHEDULE
         elif query.data == "weekly_stats":
-            return await self.show_weekly_stats(update, context)
+            await self.show_weekly_stats(update, context)
+            return WEEKLY_STATS
         elif query.data == "schedule_templates":
-            return await self.show_schedule_templates(update, context)
+            await self.show_schedule_templates(update, context)
+            return SCHEDULE_TEMPLATES
         elif query.data == "reset_all_schedules":
             return await self.reset_all_schedules(update, context)
         elif query.data == "schedule_history":
-            return await self.show_schedule_history(update, context)
+            await self.show_schedule_history(update, context)
+            return SCHEDULE_HISTORY
         elif query.data.startswith("view_week_"):
             week_key = query.data.split("_")[2]
             return await self.view_week_schedule(update, context, week_key)
@@ -2290,6 +2294,18 @@ class StaffSchedulerBot:
                 ],
                 VIEW_SCHEDULES: [
                     CallbackQueryHandler(self.view_schedules)
+                ],
+                BULK_SCHEDULE: [
+                    CallbackQueryHandler(self.handle_bulk_schedule)
+                ],
+                WEEKLY_STATS: [
+                    CallbackQueryHandler(self.handle_weekly_stats)
+                ],
+                SCHEDULE_TEMPLATES: [
+                    CallbackQueryHandler(self.handle_schedule_templates)
+                ],
+                SCHEDULE_HISTORY: [
+                    CallbackQueryHandler(self.handle_schedule_history)
                 ]
             },
             fallbacks=[CommandHandler("start", self.start)],
@@ -3512,6 +3528,73 @@ class StaffSchedulerBot:
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
             )
             return MAIN_MENU
+
+    # Handler functions for conversation states
+    async def handle_bulk_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle bulk schedule menu callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "bulk_schedule":
+            await self.show_bulk_schedule_menu(update, context)
+            return BULK_SCHEDULE
+        elif query.data == "copy_previous_week":
+            await self.copy_previous_week(update, context)
+            return BULK_SCHEDULE
+        elif query.data == "confirm_copy_previous":
+            await self.confirm_copy_previous(update, context)
+            return BULK_SCHEDULE
+        elif query.data == "quick_schedule":
+            await self.quick_schedule(update, context)
+            return BULK_SCHEDULE
+        elif query.data == "back_main":
+            return await self.show_main_menu(update, context)
+        
+        return BULK_SCHEDULE
+
+    async def handle_weekly_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle weekly stats callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "back_main":
+            return await self.show_main_menu(update, context)
+        elif query.data == "refresh_stats":
+            await self.show_weekly_stats(update, context)
+            return WEEKLY_STATS
+        
+        return WEEKLY_STATS
+
+    async def handle_schedule_templates(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle schedule templates callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "back_main":
+            return await self.show_main_menu(update, context)
+        elif query.data.startswith("template_"):
+            template_id = query.data.split("_", 1)[1]
+            await self.apply_template(update, context, template_id)
+            return SCHEDULE_TEMPLATES
+        
+        return SCHEDULE_TEMPLATES
+
+    async def handle_schedule_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle schedule history callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "schedule_history":
+            await self.show_schedule_history(update, context)
+            return SCHEDULE_HISTORY
+        elif query.data == "back_main":
+            return await self.show_main_menu(update, context)
+        elif query.data.startswith("view_week_"):
+            week_key = query.data.split("_")[2]
+            await self.view_week_schedule(update, context, week_key)
+            return SCHEDULE_HISTORY
+        
+        return SCHEDULE_HISTORY
 
 if __name__ == "__main__":
     bot = StaffSchedulerBot()
