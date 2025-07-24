@@ -115,19 +115,22 @@ class ScheduleValidator:
             is_working = data['is_working']
             
             if is_working:
-                # If working, validate times
-                if 'start_time' not in data or 'end_time' not in data:
+                # If working, validate times (handle empty strings)
+                start_time = data.get('start_time', '').strip()
+                end_time = data.get('end_time', '').strip()
+                
+                if not start_time or not end_time:
                     errors.append(f"{day}: Missing start or end time for working day")
                     continue
                 
-                time_valid, time_error = ScheduleValidator.validate_time_range(
-                    data['start_time'], data['end_time']
-                )
+                time_valid, time_error = ScheduleValidator.validate_time_range(start_time, end_time)
                 if not time_valid:
                     errors.append(f"{day}: {time_error}")
             else:
                 # If not working, times should be None or empty
-                if data.get('start_time') or data.get('end_time'):
+                start_time = data.get('start_time', '').strip()
+                end_time = data.get('end_time', '').strip()
+                if start_time or end_time:
                     errors.append(f"{day}: Should not have times when marked as Off")
         
         return len(errors) == 0, errors 

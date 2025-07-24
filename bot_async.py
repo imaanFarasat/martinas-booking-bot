@@ -1282,21 +1282,7 @@ class StaffSchedulerBot:
         schedule_data[day]['start_time'] = selected_time
         context.user_data['schedule_data'] = schedule_data
         
-        # Save the updated schedule to database immediately
-        staff_id = context.user_data.get('current_staff_id')
-        if staff_id:
-            day_data = schedule_data[day]
-            schedule_date = day_data.get('date')
-            self.db.save_schedule(
-                staff_id=staff_id,
-                day_of_week=day,
-                is_working=day_data['is_working'],
-                start_time=day_data.get('start_time'),
-                end_time=day_data.get('end_time'),
-                schedule_date=schedule_date,
-                changed_by=f"ADMIN_{update.effective_user.id}"
-            )
-            print(f"DEBUG: Schedule saved to database for {day}")
+        print(f"DEBUG: Start time set in context data for {day}")
         
         # Show end time picker (enforce both times must be set)
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
@@ -1354,22 +1340,7 @@ class StaffSchedulerBot:
         schedule_data[day]['end_time'] = selected_time
         context.user_data['schedule_data'] = schedule_data
         
-        # Save the updated schedule to database immediately
-        staff_id = context.user_data.get('current_staff_id')
-        if staff_id:
-            day_data = schedule_data[day]
-            schedule_date = day_data.get('date')
-            self.db.save_schedule(
-                staff_id=staff_id,
-                day_of_week=day,
-                is_working=day_data['is_working'],
-                start_time=day_data.get('start_time'),
-                end_time=day_data.get('end_time'),
-                schedule_date=schedule_date,
-                changed_by=f"ADMIN_{update.effective_user.id}"
-            )
-            print(f"DEBUG: Schedule saved to database for {day}")
-        
+        print(f"DEBUG: End time set in context data for {day}")
         print(f"DEBUG: About to call show_edit_confirmation")
         # Show confirmation message
         return await self.show_edit_confirmation(update, context, day)
@@ -1711,36 +1682,83 @@ class StaffSchedulerBot:
         """Save the complete schedule for the staff member"""
         staff_id = context.user_data.get('current_staff_id')
         schedule_data = context.user_data.get('schedule_data', {})
+        staff_name = context.user_data.get('current_staff_name', 'Unknown')
         
         if not staff_id:
             await update.callback_query.edit_message_text("❌ Error: Staff ID not found.")
             return await self.show_main_menu(update, context)
         
+        print(f"DEBUG: Saving schedule for {staff_name} (ID: {staff_id})")
+        print(f"DEBUG: Schedule data: {schedule_data}")
+        
         # Validate complete schedule
         is_valid, errors = ScheduleValidator.validate_schedule_data(schedule_data)
         if not is_valid:
             error_text = "\n".join(errors)
-            await update.callback_query.edit_message_text(
-                f"❌ *Schedule validation errors:*\n\n{error_text}\n\nPlease correct the errors and try again.",
-                parse_mode=ParseMode.MARKDOWN
-            )
-            return await self.show_weekly_schedule_view(update, context)
+            print(f"DEBUG: Validation failed: {errors}")
+            
+            # Show detailed error message with option to continue editing
+            text = f"❌ *Schedule validation errors for {staff_name}:*\n\n{error_text}\n\n"
+            text += "Please complete all working day times before saving."
+            
+            keyboard = [
+                [InlineKeyboardButton("✏️ Continue Editing", callback_data="edit_schedule")],
+                [InlineKeyboardButton("🔙 Back to Summary", callback_data="back_to_summary")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            return SCHEDULE_INPUT
+        
+        print(f"DEBUG: Validation passed, proceeding to save...")
         
         # Save to database with dates
         user_id = update.effective_user.id
-        for day, data in schedule_data.items():
-            schedule_date = data.get('date')
-            self.db.save_schedule(
-                staff_id=staff_id,
-                day_of_week=day,
-                is_working=data['is_working'],
-                start_time=data.get('start_time'),
-                end_time=data.get('end_time'),
-                schedule_date=schedule_date,
-                changed_by=f"ADMIN_{user_id}"
-            )
+        saved_count = 0
+        failed_saves = []
         
-        staff_name = context.user_data.get('current_staff_name', 'Unknown')
+        for day, data in schedule_data.items():
+            try:
+                schedule_date = data.get('date')
+                result = self.db.save_schedule(
+                    staff_id=staff_id,
+                    day_of_week=day,
+                    is_working=data['is_working'],
+                    start_time=data.get('start_time') if data.get('start_time') else None,
+                    end_time=data.get('end_time') if data.get('end_time') else None,
+                    schedule_date=schedule_date,
+                    changed_by=f"ADMIN_{user_id}"
+                )
+                if result:
+                    saved_count += 1
+                    print(f"DEBUG: Successfully saved {day}")
+                else:
+                    failed_saves.append(day)
+                    print(f"DEBUG: Failed to save {day}")
+            except Exception as e:
+                failed_saves.append(day)
+                print(f"DEBUG: Exception saving {day}: {e}")
+        
+        print(f"DEBUG: Saved {saved_count} days, failed: {failed_saves}")
+        
+        # Show appropriate success/failure message
+        if failed_saves:
+            failed_text = ", ".join(failed_saves)
+            text = f"⚠️ *Partial Save Complete*\n\n"
+            text += f"Saved: {saved_count} days\n"
+            text += f"Failed: {failed_text}\n\n"
+            text += f"Some changes for {staff_name} could not be saved. Please try again."
+            
+            keyboard = [
+                [InlineKeyboardButton("🔄 Try Again", callback_data="save_schedule")],
+                [InlineKeyboardButton("✏️ Edit Schedule", callback_data="edit_schedule")],
+                [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            return SCHEDULE_INPUT
+        
+        # All saves successful
         week_dates = context.user_data.get('week_dates', {})
         date_range = self.format_date_range(week_dates)
         
@@ -1755,6 +1773,7 @@ class StaffSchedulerBot:
             text = f"✅ *Schedule saved for {staff_name}*\n\n"
             text += f"*Week:* {date_range}\n"
             text += f"*Location:* Toronto, Canada\n\n"
+            text += f"Successfully saved {saved_count} days.\n\n"
             text += f"Next staff member to schedule: *{next_staff_name}*"
             
             keyboard = [
@@ -1767,6 +1786,7 @@ class StaffSchedulerBot:
             text = f"🎉 *All Staff Scheduled!*\n\n"
             text += f"*Week:* {date_range}\n"
             text += f"*Location:* Toronto, Canada\n\n"
+            text += f"Successfully saved {saved_count} days for {staff_name}.\n\n"
             text += f"All staff members have been scheduled for this week."
             
             keyboard = [

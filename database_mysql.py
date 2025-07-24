@@ -246,7 +246,8 @@ class MySQLDatabaseManager:
                 )
                 
                 if not has_changes:
-                    # No changes detected, don't log
+                    # No changes detected, still return success but log it
+                    print(f"DEBUG: No changes detected for {staff_id} on {day_of_week}")
                     conn.commit()
                     return True
             else:
