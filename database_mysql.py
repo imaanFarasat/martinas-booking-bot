@@ -43,10 +43,16 @@ class MySQLDatabaseManager:
         try:
             # Create database if it doesn't exist
             cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.database}")
-            cursor.fetchall()  # Consume any results
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             cursor.execute(f"USE {self.database}")
-            cursor.fetchall()  # Consume any results
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             # Staff table
             cursor.execute('''
@@ -56,7 +62,10 @@ class MySQLDatabaseManager:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            cursor.fetchall()  # Consume any results
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             # Schedules table
             cursor.execute('''
@@ -74,7 +83,10 @@ class MySQLDatabaseManager:
                     UNIQUE KEY unique_schedule (staff_id, day_of_week, schedule_date)
                 )
             ''')
-            cursor.fetchall()  # Consume any results
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             # Schedule changes log table for tracking modifications
             cursor.execute('''
@@ -90,26 +102,38 @@ class MySQLDatabaseManager:
                     FOREIGN KEY (staff_id) REFERENCES staff (id) ON DELETE CASCADE
                 )
             ''')
-            cursor.fetchall()  # Consume any results
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             # Create indexes for better performance
             try:
                 cursor.execute('CREATE INDEX idx_schedules_staff_id ON schedules(staff_id)')
-                cursor.fetchall()  # Consume any results
+                try:
+                    cursor.fetchall()
+                except:
+                    pass
             except mysql.connector.Error as e:
                 if e.errno != 1061:  # Error 1061 = Duplicate key name (index already exists)
                     raise
             
             try:
                 cursor.execute('CREATE INDEX idx_schedules_day ON schedules(day_of_week)')
-                cursor.fetchall()  # Consume any results
+                try:
+                    cursor.fetchall()
+                except:
+                    pass
             except mysql.connector.Error as e:
                 if e.errno != 1061:  # Error 1061 = Duplicate key name (index already exists)
                     raise
             
             try:
                 cursor.execute('CREATE INDEX idx_schedules_date ON schedules(schedule_date)')
-                cursor.fetchall()  # Consume any results
+                try:
+                    cursor.fetchall()
+                except:
+                    pass
             except mysql.connector.Error as e:
                 if e.errno != 1061:  # Error 1061 = Duplicate key name (index already exists)
                     raise
@@ -131,7 +155,11 @@ class MySQLDatabaseManager:
         
         try:
             cursor.execute('INSERT INTO staff (name) VALUES (%s)', (name,))
-            cursor.fetchall()  # Consume any results
+            # Consume any results from INSERT
+            try:
+                cursor.fetchall()
+            except:
+                pass
             staff_id = cursor.lastrowid
             
             # Log the staff addition
@@ -139,7 +167,11 @@ class MySQLDatabaseManager:
                 INSERT INTO schedule_changes (staff_id, action, new_data, changed_by)
                 VALUES (%s, %s, %s, %s)
             ''', (staff_id, 'ADD_STAFF', json.dumps({'name': name}), 'ADMIN'))
-            cursor.fetchall()  # Consume any results
+            # Consume any results from INSERT
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             conn.commit()
             logger.info(f"Staff member '{name}' added with ID {staff_id}")
@@ -163,12 +195,14 @@ class MySQLDatabaseManager:
         cursor = conn.cursor()
         
         try:
-            # Start transaction
-            conn.start_transaction()
-            
             # Get staff name before deletion for logging
             cursor.execute('SELECT name FROM staff WHERE id = %s', (staff_id,))
             staff_record = cursor.fetchone()
+            # Consume any remaining results
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             if not staff_record:
                 raise ValueError(f"Staff member with ID {staff_id} not found")
@@ -180,9 +214,19 @@ class MySQLDatabaseManager:
                 INSERT INTO schedule_changes (staff_id, action, old_data, changed_by)
                 VALUES (%s, %s, %s, %s)
             ''', (staff_id, 'REMOVE_STAFF', json.dumps({'name': staff_name}), 'ADMIN'))
+            # Consume any results from INSERT
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             # Remove staff (schedules will be removed by CASCADE)
             cursor.execute('DELETE FROM staff WHERE id = %s', (staff_id,))
+            # Consume any results from DELETE
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             conn.commit()
             logger.info(f"Staff member '{staff_name}' with ID {staff_id} removed")
@@ -249,9 +293,6 @@ class MySQLDatabaseManager:
         cursor = conn.cursor()
         
         try:
-            # Start explicit transaction
-            conn.start_transaction()
-            
             # Validate inputs
             if not isinstance(staff_id, int) or staff_id <= 0:
                 raise ValueError(f"Invalid staff_id: {staff_id}")
@@ -269,6 +310,12 @@ class MySQLDatabaseManager:
             # Verify staff exists
             cursor.execute('SELECT id, name FROM staff WHERE id = %s', (staff_id,))
             staff_record = cursor.fetchone()
+            # Consume any remaining results
+            try:
+                cursor.fetchall()
+            except:
+                pass
+            
             if not staff_record:
                 raise ValueError(f"Staff member with ID {staff_id} not found")
             
@@ -289,6 +336,11 @@ class MySQLDatabaseManager:
                 ''', (staff_id, day_of_week))
             
             existing = cursor.fetchone()
+            # Consume any remaining results
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             # Prepare new data for logging
             new_data = {
@@ -330,12 +382,22 @@ class MySQLDatabaseManager:
                 (staff_id, day_of_week, schedule_date, is_working, start_time, end_time)
                 VALUES (%s, %s, %s, %s, %s, %s)
             ''', (staff_id, day_of_week, schedule_date, is_working, start_time, end_time))
+            # Consume any results from REPLACE INTO
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             # Log the schedule change
             cursor.execute('''
                 INSERT INTO schedule_changes (staff_id, action, day_of_week, old_data, new_data, changed_by)
                 VALUES (%s, %s, %s, %s, %s, %s)
             ''', (staff_id, action, day_of_week, json.dumps(old_data) if old_data else None, json.dumps(new_data), changed_by))
+            # Consume any results from INSERT
+            try:
+                cursor.fetchall()
+            except:
+                pass
             
             # Commit the transaction
             conn.commit()
