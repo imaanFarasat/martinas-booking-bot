@@ -2298,37 +2298,65 @@ class StaffSchedulerBot:
         
         application.add_handler(conv_handler)
         
-        # Initialize the application
-        await application.initialize()
-        
-        # Check if we're running on Railway or other cloud platform
-        port = int(os.getenv('PORT', 8000))
-        webhook_url = os.getenv('WEBHOOK_URL')
-        
-        if webhook_url:
-            # Production mode with webhooks (more reliable)
-            logger.info(f"Starting bot with webhooks on port {port}")
-            logger.info(f"Webhook URL: {webhook_url}")
+        try:
+            # Initialize the application
+            await application.initialize()
             
-            # Set webhook
-            await application.bot.set_webhook(url=webhook_url)
+            # Check if we're running on Railway or other cloud platform
+            webhook_url = os.getenv('WEBHOOK_URL')
             
-            # Start webhook server
-            await application.run_webhook(
-                listen="0.0.0.0",
-                port=port,
-                webhook_url=webhook_url,
-                drop_pending_updates=True
-            )
-        else:
-            # Development mode with polling (fallback)
-            logger.info("Starting bot with polling (development mode)")
-            
-            # Use built-in polling with compatible parameters
-            await application.run_polling(
-                drop_pending_updates=True,
-                allowed_updates=['message', 'callback_query']
-            )
+            if webhook_url:
+                # Production mode with webhooks
+                logger.info(f"🌐 Production mode - Webhook URL: {webhook_url}")
+                
+                try:
+                    # Set webhook
+                    await application.bot.set_webhook(url=webhook_url)
+                    logger.info("✅ Webhook set successfully")
+                    
+                    # Start webhook server (this will block until shutdown)
+                    await application.run_webhook(
+                        listen="0.0.0.0",
+                        port=int(os.getenv('PORT', 8000)),
+                        webhook_url=webhook_url,
+                        drop_pending_updates=True
+                    )
+                except Exception as webhook_error:
+                    logger.error(f"❌ Webhook setup failed: {webhook_error}")
+                    logger.info("🔄 Falling back to polling mode")
+                    
+                    # Clear webhook and use polling instead
+                    try:
+                        await application.bot.delete_webhook()
+                    except:
+                        pass
+                    
+                    # Use polling as fallback
+                    await application.run_polling(
+                        drop_pending_updates=True,
+                        allowed_updates=['message', 'callback_query']
+                    )
+            else:
+                # Development mode with polling
+                logger.info("🔧 Development mode - Using polling")
+                
+                # Use polling
+                await application.run_polling(
+                    drop_pending_updates=True,
+                    allowed_updates=['message', 'callback_query']
+                )
+                
+        except Exception as e:
+            logger.error(f"❌ Error running bot: {e}")
+            raise
+        finally:
+            # Ensure proper cleanup
+            try:
+                await application.shutdown()
+                logger.info("✅ Bot shutdown completed")
+            except Exception as shutdown_error:
+                logger.error(f"⚠️ Error during shutdown: {shutdown_error}")
+                # Don't re-raise shutdown errors
     
     async def edit_next_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Move to edit the next day in the schedule"""
