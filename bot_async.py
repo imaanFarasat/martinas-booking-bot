@@ -2301,6 +2301,7 @@ class StaffSchedulerBot:
         try:
             # Initialize the application
             await application.initialize()
+            await application.start()
             
             # Check if we're running on Railway or other cloud platform
             webhook_url = os.getenv('WEBHOOK_URL')
@@ -2314,13 +2315,18 @@ class StaffSchedulerBot:
                     await application.bot.set_webhook(url=webhook_url)
                     logger.info("✅ Webhook set successfully")
                     
-                    # Start webhook server (this will block until shutdown)
-                    await application.run_webhook(
+                    # Start webhook server
+                    await application.updater.start_webhook(
                         listen="0.0.0.0",
                         port=int(os.getenv('PORT', 8000)),
                         webhook_url=webhook_url,
                         drop_pending_updates=True
                     )
+                    logger.info("🌐 Webhook server started")
+                    
+                    # Keep running until interrupted
+                    await self._keep_running()
+                        
                 except Exception as webhook_error:
                     logger.error(f"❌ Webhook setup failed: {webhook_error}")
                     logger.info("🔄 Falling back to polling mode")
@@ -2332,19 +2338,27 @@ class StaffSchedulerBot:
                         pass
                     
                     # Use polling as fallback
-                    await application.run_polling(
+                    await application.updater.start_polling(
                         drop_pending_updates=True,
                         allowed_updates=['message', 'callback_query']
                     )
+                    logger.info("🔧 Polling started as fallback")
+                    
+                    # Keep running until interrupted
+                    await self._keep_running()
             else:
                 # Development mode with polling
                 logger.info("🔧 Development mode - Using polling")
                 
-                # Use polling
-                await application.run_polling(
+                # Start polling
+                await application.updater.start_polling(
                     drop_pending_updates=True,
                     allowed_updates=['message', 'callback_query']
                 )
+                logger.info("✅ Polling started successfully")
+                
+                # Keep running until interrupted
+                await self._keep_running()
                 
         except Exception as e:
             logger.error(f"❌ Error running bot: {e}")
@@ -2352,11 +2366,27 @@ class StaffSchedulerBot:
         finally:
             # Ensure proper cleanup
             try:
+                logger.info("🔄 Stopping bot...")
+                await application.updater.stop()
+                await application.stop()
                 await application.shutdown()
                 logger.info("✅ Bot shutdown completed")
             except Exception as shutdown_error:
                 logger.error(f"⚠️ Error during shutdown: {shutdown_error}")
                 # Don't re-raise shutdown errors
+    
+    async def _keep_running(self):
+        """Keep the bot running until interrupted"""
+        try:
+            # Run indefinitely
+            while True:
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            logger.info("Bot task cancelled")
+            raise
+        except KeyboardInterrupt:
+            logger.info("Keyboard interrupt received")
+            raise
     
     async def edit_next_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Move to edit the next day in the schedule"""
