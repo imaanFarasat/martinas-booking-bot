@@ -2324,16 +2324,10 @@ class StaffSchedulerBot:
             # Development mode with polling (fallback)
             logger.info("Starting bot with polling (development mode)")
             
-            # Use built-in polling with better error handling
+            # Use built-in polling with compatible parameters
             await application.run_polling(
                 drop_pending_updates=True,
-                allowed_updates=['message', 'callback_query'],
-                timeout=30,
-                bootstrap_retries=5,
-                read_timeout=10,
-                write_timeout=10,
-                connect_timeout=10,
-                pool_timeout=10
+                allowed_updates=['message', 'callback_query']
             )
     
     async def edit_next_day(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
