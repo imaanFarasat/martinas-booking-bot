@@ -5,8 +5,11 @@ Main entry point for the Staff Scheduler Bot
 import os
 import asyncio
 import logging
+import threading
 from dotenv import load_dotenv
 from bot_async import StaffSchedulerBot
+from flask import Flask, jsonify
+import time
 
 # Load environment variables
 load_dotenv()
@@ -17,6 +20,33 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Create Flask app for health checks
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    """Health check endpoint for Railway"""
+    return jsonify({
+        "status": "healthy",
+        "service": "Staff Scheduler Bot",
+        "timestamp": time.time()
+    })
+
+@app.route('/health')
+def health():
+    """Detailed health check"""
+    return jsonify({
+        "status": "healthy",
+        "service": "Staff Scheduler Bot",
+        "database": "MySQL",
+        "timestamp": time.time()
+    })
+
+def run_web_server():
+    """Run the Flask web server"""
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)
 
 async def main():
     """Main function to run the bot"""
@@ -46,6 +76,11 @@ if __name__ == "__main__":
     # Get port from environment (for Railway)
     port = int(os.environ.get('PORT', 8080))
     logger.info(f"🚀 Starting bot on port {port}")
+    
+    # Start web server in a separate thread
+    web_thread = threading.Thread(target=run_web_server, daemon=True)
+    web_thread.start()
+    logger.info("🌐 Web server started for health checks")
     
     # Run the bot
     asyncio.run(main()) 
