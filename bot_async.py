@@ -109,7 +109,18 @@ class StaffSchedulerBot:
         if query.data == "staff_management":
             return await self.show_staff_management(update, context)
         elif query.data == "set_schedule":
-            return await self.show_week_selection_for_all(update, context)
+            # Check if there's already a selected week in context
+            week_dates = context.user_data.get('week_dates', {})
+            week_start = context.user_data.get('week_start')
+            
+            if week_dates and week_start:
+                # Use the previously selected week
+                print(f"DEBUG: Using previously selected week: {week_dates}")
+                return await self.show_schedule_menu(update, context)
+            else:
+                # No week selected, show week selection
+                print(f"DEBUG: No week selected, showing week selection")
+                return await self.show_week_selection_for_all(update, context)
         elif query.data == "view_current_schedules":
             return await self.view_schedules(update, context)
         elif query.data == "export_pdf":
@@ -405,7 +416,7 @@ class StaffSchedulerBot:
         for staff_id, name in staff_list:
             keyboard.append([InlineKeyboardButton(f"📅 {name}", callback_data=f"schedule_{staff_id}")])
         
-        keyboard.append([InlineKeyboardButton("🔙 Back to Week Selection", callback_data="back_week_selection")])
+        keyboard.append([InlineKeyboardButton("🔄 Change Week", callback_data="change_week")])
         keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -426,7 +437,7 @@ class StaffSchedulerBot:
         
         if query.data == "back_main":
             return await self.show_main_menu(update, context)
-        elif query.data == "back_week_selection":
+        elif query.data == "change_week":
             return await self.show_week_selection_for_all(update, context)
         
         if query.data.startswith("schedule_"):
@@ -757,6 +768,8 @@ class StaffSchedulerBot:
             return await self.start_time_setting(update, context)
         elif query.data == "view_complete_schedule":
             return await self.show_final_schedule_summary(update, context)
+        elif query.data == "change_week":
+            return await self.show_week_selection_for_all(update, context)
         elif query.data == "back_to_time_setting":
             return await self.start_time_setting(update, context)
         elif query.data == "start_over":
@@ -1235,6 +1248,7 @@ class StaffSchedulerBot:
                 InlineKeyboardButton("✅ Yes, Save", callback_data="save_schedule"),
                 InlineKeyboardButton("✏️ Edit", callback_data="edit_schedule")
             ],
+            [InlineKeyboardButton("🔄 Change Week", callback_data="change_week")],
             [InlineKeyboardButton("👀 Back to View Schedules", callback_data="view_current_schedules")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
