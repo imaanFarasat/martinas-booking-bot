@@ -1014,23 +1014,39 @@ class StaffSchedulerBot:
         
         keyboard = []
         
-        # Start time row
-        start_row = []
-        for time in start_times:
-            if time == day_data['start_time']:
-                start_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"start_{time}"))
-            else:
-                start_row.append(InlineKeyboardButton(f"🟩 {time}", callback_data=f"start_{time}"))
-        keyboard.append(start_row)
+        # Start Time Section Header
+        keyboard.append([InlineKeyboardButton("🟩 Start Time", callback_data="header_start")])
         
-        # End time row
-        end_row = []
-        for time in end_times:
-            if time == day_data['end_time']:
-                end_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"end_{time}"))
-            else:
-                end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"end_{time}"))
-        keyboard.append(end_row)
+        # Start time options (3 per row for better layout)
+        start_rows = []
+        for i in range(0, len(start_times), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(start_times):
+                    time = start_times[i + j]
+                    if time == day_data['start_time']:
+                        row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"start_{time}"))
+                    else:
+                        row.append(InlineKeyboardButton(time, callback_data=f"start_{time}"))
+            if row:
+                keyboard.append(row)
+        
+        # End Time Section Header
+        keyboard.append([InlineKeyboardButton("🔺 End Time", callback_data="header_end")])
+        
+        # End time options (3 per row for better layout)
+        end_rows = []
+        for i in range(0, len(end_times), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(end_times):
+                    time = end_times[i + j]
+                    if time == day_data['end_time']:
+                        row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"end_{time}"))
+                    else:
+                        row.append(InlineKeyboardButton(time, callback_data=f"end_{time}"))
+            if row:
+                keyboard.append(row)
         
         # Action buttons
         keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_time_setting")])
@@ -1153,17 +1169,31 @@ class StaffSchedulerBot:
         
         keyboard = []
         
-        # Start time row
-        start_row = []
-        for time in start_times:
-            start_row.append(InlineKeyboardButton(f"🟩 {time}", callback_data=f"start_{time}"))
-        keyboard.append(start_row)
+        # Start Time Section Header
+        keyboard.append([InlineKeyboardButton("🟩 Start Time", callback_data="header_start")])
         
-        # End time row
-        end_row = []
-        for time in end_times:
-            end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"end_{time}"))
-        keyboard.append(end_row)
+        # Start time options (3 per row for better layout)
+        for i in range(0, len(start_times), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(start_times):
+                    time = start_times[i + j]
+                    row.append(InlineKeyboardButton(time, callback_data=f"start_{time}"))
+            if row:
+                keyboard.append(row)
+        
+        # End Time Section Header
+        keyboard.append([InlineKeyboardButton("🔺 End Time", callback_data="header_end")])
+        
+        # End time options (3 per row for better layout)
+        for i in range(0, len(end_times), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(end_times):
+                    time = end_times[i + j]
+                    row.append(InlineKeyboardButton(time, callback_data=f"end_{time}"))
+            if row:
+                keyboard.append(row)
         
         # Action buttons
         keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_time_setting")])
@@ -1344,23 +1374,37 @@ class StaffSchedulerBot:
         
         keyboard = []
         
-        # Start time row
-        start_row = []
-        for time in start_times:
-            if time == day_data['start_time']:
-                start_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_start_{day}_{time}"))
-            else:
-                start_row.append(InlineKeyboardButton(f"🟩 {time}", callback_data=f"edit_start_{day}_{time}"))
-        keyboard.append(start_row)
+        # Start Time Section Header
+        keyboard.append([InlineKeyboardButton("🟩 Start Time", callback_data="header_start")])
         
-        # End time row
-        end_row = []
-        for time in end_times:
-            if time == day_data['end_time']:
-                end_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{day}_{time}"))
-            else:
-                end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"edit_end_{day}_{time}"))
-        keyboard.append(end_row)
+        # Start time options (3 per row for better layout)
+        for i in range(0, len(start_times), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(start_times):
+                    time = start_times[i + j]
+                    if time == day_data['start_time']:
+                        row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_start_{day}_{time}"))
+                    else:
+                        row.append(InlineKeyboardButton(time, callback_data=f"edit_start_{day}_{time}"))
+            if row:
+                keyboard.append(row)
+        
+        # End Time Section Header
+        keyboard.append([InlineKeyboardButton("🔺 End Time", callback_data="header_end")])
+        
+        # End time options (3 per row for better layout)
+        for i in range(0, len(end_times), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(end_times):
+                    time = end_times[i + j]
+                    if time == day_data['end_time']:
+                        row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{day}_{time}"))
+                    else:
+                        row.append(InlineKeyboardButton(time, callback_data=f"edit_end_{day}_{time}"))
+            if row:
+                keyboard.append(row)
         
         # Action buttons
         keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_edit_confirmation")])
@@ -1402,13 +1446,22 @@ class StaffSchedulerBot:
         end_times = ["14:00", "17:00", "18:00", "19:00", "20:00", "21:00"]
         
         keyboard = []
-        end_row = []
-        for time in end_times:
-            if time == schedule_data[day].get('end_time'):
-                end_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{day}_{time}"))
-            else:
-                end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"edit_end_{day}_{time}"))
-        keyboard.append(end_row)
+        
+        # End Time Section Header
+        keyboard.append([InlineKeyboardButton("🔺 End Time", callback_data="header_end")])
+        
+        # End time options (3 per row for better layout)
+        for i in range(0, len(end_times), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(end_times):
+                    time = end_times[i + j]
+                    if time == schedule_data[day].get('end_time'):
+                        row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{day}_{time}"))
+                    else:
+                        row.append(InlineKeyboardButton(time, callback_data=f"edit_end_{day}_{time}"))
+            if row:
+                keyboard.append(row)
         
         # Add action buttons
         keyboard.append([
@@ -2810,30 +2863,44 @@ class StaffSchedulerBot:
         text += f"Progress: {len(context.user_data.get('selected_days_for_edit', [])) - len(remaining_days) + 1}/{len(context.user_data.get('selected_days_for_edit', []))}\n\n"
         text += f"*Please select the start and end times:*"
         
-        # Create time picker keyboard with exact same format as original
+        # Create time picker keyboard with structured layout
         keyboard = []
         
         # Start time options (exactly like original: 9:45 AM to 5 PM)
         start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00"]
         end_times = ["14:00", "17:00", "18:00", "19:00", "20:00", "21:00"]
         
-        # Start time row
-        start_row = []
-        for time in start_times:
-            if time == day_data['start_time']:
-                start_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_start_{current_day}_{time}"))
-            else:
-                start_row.append(InlineKeyboardButton(f"🟩 {time}", callback_data=f"edit_start_{current_day}_{time}"))
-        keyboard.append(start_row)
+        # Start Time Section Header
+        keyboard.append([InlineKeyboardButton("🟩 Start Time", callback_data="header_start")])
         
-        # End time row
-        end_row = []
-        for time in end_times:
-            if time == day_data['end_time']:
-                end_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{current_day}_{time}"))
-            else:
-                end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"edit_end_{current_day}_{time}"))
-        keyboard.append(end_row)
+        # Start time options (3 per row for better layout)
+        for i in range(0, len(start_times), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(start_times):
+                    time = start_times[i + j]
+                    if time == day_data['start_time']:
+                        row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_start_{current_day}_{time}"))
+                    else:
+                        row.append(InlineKeyboardButton(time, callback_data=f"edit_start_{current_day}_{time}"))
+            if row:
+                keyboard.append(row)
+        
+        # End Time Section Header
+        keyboard.append([InlineKeyboardButton("🔺 End Time", callback_data="header_end")])
+        
+        # End time options (3 per row for better layout)
+        for i in range(0, len(end_times), 3):
+            row = []
+            for j in range(3):
+                if i + j < len(end_times):
+                    time = end_times[i + j]
+                    if time == day_data['end_time']:
+                        row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{current_day}_{time}"))
+                    else:
+                        row.append(InlineKeyboardButton(time, callback_data=f"edit_end_{current_day}_{time}"))
+            if row:
+                keyboard.append(row)
         
         # Add action buttons
         keyboard.append([
