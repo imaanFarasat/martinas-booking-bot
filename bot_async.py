@@ -477,11 +477,16 @@ class StaffSchedulerBot:
         week_dates = context.user_data.get('week_dates', {})
         week_start = context.user_data.get('week_start')
         
-        # If no week dates in context, calculate current week (fallback)
+        # Use selected week from context, or calculate current week if not set
         if not week_dates:
-            week_dates, week_start = self.calculate_week_dates()
-            context.user_data['week_dates'] = week_dates
-            context.user_data['week_start'] = week_start
+            week_dates = context.user_data.get('week_dates', {})
+            week_start = context.user_data.get('week_start')
+            
+            if not week_dates or not week_start:
+                # Fallback to current week if no week selected
+                week_dates, week_start = self.calculate_week_dates()
+                context.user_data['week_dates'] = week_dates
+                context.user_data['week_start'] = week_start
         
         date_range = self.format_date_range(week_dates)
         
@@ -535,11 +540,18 @@ class StaffSchedulerBot:
         context.user_data['schedule_data'] = schedule_data
         print(f"DEBUG: Final schedule_data in context: {schedule_data}")
         
-        # CRITICAL FIX: Initialize week_dates for single-day editing
-        week_dates, week_start = self.calculate_week_dates()
-        context.user_data['week_dates'] = week_dates
-        context.user_data['week_start'] = week_start
-        print(f"DEBUG: Initialized week_dates in show_existing_schedule: {week_dates}")
+        # Use selected week from context, or calculate current week if not set
+        week_dates = context.user_data.get('week_dates', {})
+        week_start = context.user_data.get('week_start')
+        
+        if not week_dates or not week_start:
+            # Fallback to current week if no week selected
+            week_dates, week_start = self.calculate_week_dates()
+            context.user_data['week_dates'] = week_dates
+            context.user_data['week_start'] = week_start
+            print(f"DEBUG: Fallback to current week in show_existing_schedule: {week_dates}")
+        else:
+            print(f"DEBUG: Using selected week in show_existing_schedule: {week_dates}")
         
         # Build display text
         text = f"📅 *{staff_name}'s Current Schedule*\n\n"
@@ -585,11 +597,16 @@ class StaffSchedulerBot:
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
         week_dates = context.user_data.get('week_dates', {})
         
-        # If week_dates is not available, calculate it
+        # Use selected week from context, or calculate current week if not set
         if not week_dates:
-            week_dates, week_start = self.calculate_week_dates()
-            context.user_data['week_dates'] = week_dates
-            context.user_data['week_start'] = week_start
+            week_dates = context.user_data.get('week_dates', {})
+            week_start = context.user_data.get('week_start')
+            
+            if not week_dates or not week_start:
+                # Fallback to current week if no week selected
+                week_dates, week_start = self.calculate_week_dates()
+                context.user_data['week_dates'] = week_dates
+                context.user_data['week_start'] = week_start
         
         date_range = self.format_date_range(week_dates)
         
@@ -1219,9 +1236,12 @@ class StaffSchedulerBot:
         # Set current off days as selected
         context.user_data['selected_off_days'] = current_off_days
         
-        # Ensure week_dates are available
+        # Use selected week from context, or calculate current week if not set
         week_dates = context.user_data.get('week_dates', {})
-        if not week_dates:
+        week_start = context.user_data.get('week_start')
+        
+        if not week_dates or not week_start:
+            # Fallback to current week if no week selected
             week_dates, week_start = self.calculate_week_dates()
             context.user_data['week_dates'] = week_dates
             context.user_data['week_start'] = week_start
