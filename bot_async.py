@@ -109,7 +109,7 @@ class StaffSchedulerBot:
         if query.data == "staff_management":
             return await self.show_staff_management(update, context)
         elif query.data == "set_schedule":
-            return await self.show_schedule_menu(update, context)
+            return await self.show_week_selection_for_all(update, context)
         elif query.data == "view_current_schedules":
             return await self.view_schedules(update, context)
         elif query.data == "export_pdf":
@@ -391,16 +391,27 @@ class StaffSchedulerBot:
             )
             return MAIN_MENU
         
+        # Get selected week information
+        week_dates = context.user_data.get('week_dates', {})
+        week_start = context.user_data.get('week_start')
+        
+        if week_dates and week_start:
+            date_range = self.format_date_range(week_dates)
+            text = f"📅 *Set Schedule*\n\n*Selected Week:* {date_range}\n\nSelect a staff member to set their schedule:"
+        else:
+            text = "📅 *Set Schedule*\n\nSelect a staff member to set their schedule:"
+        
         keyboard = []
         for staff_id, name in staff_list:
             keyboard.append([InlineKeyboardButton(f"📅 {name}", callback_data=f"schedule_{staff_id}")])
         
-        keyboard.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")])
+        keyboard.append([InlineKeyboardButton("🔙 Back to Week Selection", callback_data="back_week_selection")])
+        keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")])
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         query = update.callback_query
         await query.edit_message_text(
-            "📅 *Set Schedule*\n\nSelect a staff member to set their schedule:",
+            text,
             reply_markup=reply_markup,
             parse_mode=ParseMode.MARKDOWN
         )
@@ -415,6 +426,8 @@ class StaffSchedulerBot:
         
         if query.data == "back_main":
             return await self.show_main_menu(update, context)
+        elif query.data == "back_week_selection":
+            return await self.show_week_selection_for_all(update, context)
         
         if query.data.startswith("schedule_"):
             staff_id = int(query.data.split("_")[1])
@@ -427,24 +440,31 @@ class StaffSchedulerBot:
                 context.user_data['current_staff_name'] = staff_info[1]
                 print(f"DEBUG: Setting up schedule for {staff_info[1]}")
                 
-                # Check if staff already has a schedule for current week
-                current_week_dates, current_week_start = self.calculate_week_dates()
-                existing_schedule = self.db.get_staff_schedule_for_week(staff_id, current_week_start)
-                if existing_schedule:
-                    # Staff has existing schedule for current week, show it with edit options
-                    schedule_list = []
-                    for day in DAYS_OF_WEEK:
-                        if day in existing_schedule:
-                            day_data = existing_schedule[day]
-                            schedule_list.append((
-                                day,
-                                day_data['is_working'],
-                                day_data['start_time'],
-                                day_data['end_time']
-                            ))
-                    return await self.show_existing_schedule(update, context, schedule_list)
+                # Get the selected week from context (set by week selection)
+                week_dates = context.user_data.get('week_dates', {})
+                week_start = context.user_data.get('week_start')
+                
+                if week_dates and week_start:
+                    # Check if staff already has a schedule for the selected week
+                    existing_schedule = self.db.get_staff_schedule_for_week(staff_id, week_start)
+                    if existing_schedule:
+                        # Staff has existing schedule for selected week, show it with edit options
+                        schedule_list = []
+                        for day in DAYS_OF_WEEK:
+                            if day in existing_schedule:
+                                day_data = existing_schedule[day]
+                                schedule_list.append((
+                                    day,
+                                    day_data['is_working'],
+                                    day_data['start_time'],
+                                    day_data['end_time']
+                                ))
+                        return await self.show_existing_schedule(update, context, schedule_list)
+                    else:
+                        # No existing schedule for selected week, start fresh
+                        return await self.show_schedule_input_form(update, context)
                 else:
-                    # No existing schedule, show week selection
+                    # No week selected, show week selection
                     return await self.show_week_selection(update, context)
         
         return SCHEDULE_MENU
@@ -3742,44 +3762,126 @@ class StaffSchedulerBot:
         
         if query.data == "back_schedule_menu":
             return await self.show_schedule_menu(update, context)
+        elif query.data == "back_main":
+            return await self.show_main_menu(update, context)
         
         # Calculate the selected week dates
         current_week_dates, current_week_start = self.calculate_week_dates()
         
-        if query.data == "select_week_current":
-            week_dates = current_week_dates
-            week_start = current_week_start
-        elif query.data == "select_week_next":
-            week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=7))
-        elif query.data == "select_week_after_next":
-            week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=14))
-        else:
+        # Handle "all staff" week selection (new flow)
+        if query.data in ["select_week_all_current", "select_week_all_next", "select_week_all_after_next"]:
+            if query.data == "select_week_all_current":
+                week_dates = current_week_dates
+                week_start = current_week_start
+            elif query.data == "select_week_all_next":
+                week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=7))
+            elif query.data == "select_week_all_after_next":
+                week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=14))
+            
+            # Store selected week dates in context
+            context.user_data['week_dates'] = week_dates
+            context.user_data['week_start'] = week_start
+            
+            # Show staff selection menu for the selected week
             return await self.show_schedule_menu(update, context)
         
-        # Store selected week dates in context
-        context.user_data['week_dates'] = week_dates
-        context.user_data['week_start'] = week_start
+        # Handle individual staff week selection (existing flow)
+        elif query.data in ["select_week_current", "select_week_next", "select_week_after_next"]:
+            if query.data == "select_week_current":
+                week_dates = current_week_dates
+                week_start = current_week_start
+            elif query.data == "select_week_next":
+                week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=7))
+            elif query.data == "select_week_after_next":
+                week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=14))
+            
+            # Store selected week dates in context
+            context.user_data['week_dates'] = week_dates
+            context.user_data['week_start'] = week_start
+            
+            # Check if staff already has a schedule for this week
+            staff_id = context.user_data.get('current_staff_id')
+            if staff_id:
+                existing_schedule = self.db.get_staff_schedule_for_week(staff_id, week_start)
+                if existing_schedule:
+                    # Convert to the format expected by show_existing_schedule
+                    schedule_list = []
+                    for day in DAYS_OF_WEEK:
+                        if day in existing_schedule:
+                            day_data = existing_schedule[day]
+                            schedule_list.append((
+                                day,
+                                day_data['is_working'],
+                                day_data['start_time'],
+                                day_data['end_time']
+                            ))
+                    return await self.show_existing_schedule(update, context, schedule_list)
+            
+            # No existing schedule, start fresh
+            return await self.show_schedule_input_form(update, context)
         
-        # Check if staff already has a schedule for this week
-        staff_id = context.user_data.get('current_staff_id')
-        if staff_id:
-            existing_schedule = self.db.get_staff_schedule_for_week(staff_id, week_start)
-            if existing_schedule:
-                # Convert to the format expected by show_existing_schedule
-                schedule_list = []
-                for day in DAYS_OF_WEEK:
-                    if day in existing_schedule:
-                        day_data = existing_schedule[day]
-                        schedule_list.append((
-                            day,
-                            day_data['is_working'],
-                            day_data['start_time'],
-                            day_data['end_time']
-                        ))
-                return await self.show_existing_schedule(update, context, schedule_list)
+        return await self.show_schedule_menu(update, context)
+
+    async def show_week_selection_for_all(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show week selection options for all staff scheduling"""
+        # Calculate three week options
+        current_week_dates, current_week_start = self.calculate_week_dates()
+        next_week_dates, next_week_start = self.calculate_week_dates(current_week_start + timedelta(days=7))
+        week_after_next_dates, week_after_next_start = self.calculate_week_dates(current_week_start + timedelta(days=14))
         
-        # No existing schedule, start fresh
-        return await self.show_schedule_input_form(update, context)
+        # Get current date in Toronto timezone
+        toronto_tz = pytz.timezone('America/Toronto')
+        today = datetime.now(toronto_tz).date()
+        
+        # Format date ranges
+        current_range = self.format_date_range(current_week_dates)
+        next_range = self.format_date_range(next_week_dates)
+        week_after_next_range = self.format_date_range(week_after_next_dates)
+        
+        # Check which days in current week are in the past
+        current_week_past_days = []
+        current_week_remaining_days = []
+        for day, date in current_week_dates.items():
+            if date < today:
+                current_week_past_days.append(day)
+            else:
+                current_week_remaining_days.append(day)
+        
+        text = f"📅 *Choose Week for Scheduling*\n\n"
+        text += f"Select which 7-day period you want to schedule:\n\n"
+        
+        # Current week option
+        if current_week_remaining_days:
+            text += f"🔄 *Current Week ({current_range})*\n"
+            if current_week_past_days:
+                text += f"   ⚠️ {len(current_week_past_days)} days completed, {len(current_week_remaining_days)} days remaining\n"
+            else:
+                text += f"   ✅ Full week available\n"
+        else:
+            text += f"❌ *Current Week ({current_range})*\n"
+            text += f"   ⏰ All days in the past\n"
+        
+        text += f"\n📅 *Next Week ({next_range})*\n"
+        text += f"   ✅ Full week available\n"
+        
+        text += f"\n📅 *Week After Next ({week_after_next_range})*\n"
+        text += f"   ✅ Full week available\n"
+        
+        keyboard = []
+        
+        # Add current week button only if there are remaining days
+        if current_week_remaining_days:
+            keyboard.append([InlineKeyboardButton(f"🔄 Current Week ({current_range})", callback_data="select_week_all_current")])
+        
+        keyboard.append([InlineKeyboardButton(f"📅 Next Week ({next_range})", callback_data="select_week_all_next")])
+        keyboard.append([InlineKeyboardButton(f"📅 Week After Next ({week_after_next_range})", callback_data="select_week_all_after_next")])
+        keyboard.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        query = update.callback_query
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        return WEEK_SELECTION
 
     async def show_week_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show week selection options before starting schedule"""
