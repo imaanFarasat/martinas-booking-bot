@@ -908,7 +908,7 @@ class StaffSchedulerBot:
             if time == schedule_data[current_day].get('end_time'):
                 end_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"end_{time}"))
             else:
-                end_row.append(InlineKeyboardButton(f"🔴 {time}", callback_data=f"end_{time}"))
+                end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"end_{time}"))
         keyboard.append(end_row)
         
         # Action buttons
@@ -1020,7 +1020,7 @@ class StaffSchedulerBot:
             if time == day_data['start_time']:
                 start_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"start_{time}"))
             else:
-                start_row.append(InlineKeyboardButton(f"🟢 {time}", callback_data=f"start_{time}"))
+                start_row.append(InlineKeyboardButton(f"🟩 {time}", callback_data=f"start_{time}"))
         keyboard.append(start_row)
         
         # End time row
@@ -1029,7 +1029,7 @@ class StaffSchedulerBot:
             if time == day_data['end_time']:
                 end_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"end_{time}"))
             else:
-                end_row.append(InlineKeyboardButton(f"🔴 {time}", callback_data=f"end_{time}"))
+                end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"end_{time}"))
         keyboard.append(end_row)
         
         # Action buttons
@@ -1156,13 +1156,13 @@ class StaffSchedulerBot:
         # Start time row
         start_row = []
         for time in start_times:
-            start_row.append(InlineKeyboardButton(f"🟢 {time}", callback_data=f"start_{time}"))
+            start_row.append(InlineKeyboardButton(f"🟩 {time}", callback_data=f"start_{time}"))
         keyboard.append(start_row)
         
         # End time row
         end_row = []
         for time in end_times:
-            end_row.append(InlineKeyboardButton(f"🔴 {time}", callback_data=f"end_{time}"))
+            end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"end_{time}"))
         keyboard.append(end_row)
         
         # Action buttons
@@ -1350,7 +1350,7 @@ class StaffSchedulerBot:
             if time == day_data['start_time']:
                 start_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_start_{day}_{time}"))
             else:
-                start_row.append(InlineKeyboardButton(f"🟢 {time}", callback_data=f"edit_start_{day}_{time}"))
+                start_row.append(InlineKeyboardButton(f"🟩 {time}", callback_data=f"edit_start_{day}_{time}"))
         keyboard.append(start_row)
         
         # End time row
@@ -1359,7 +1359,7 @@ class StaffSchedulerBot:
             if time == day_data['end_time']:
                 end_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{day}_{time}"))
             else:
-                end_row.append(InlineKeyboardButton(f"🔴 {time}", callback_data=f"edit_end_{day}_{time}"))
+                end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"edit_end_{day}_{time}"))
         keyboard.append(end_row)
         
         # Action buttons
@@ -1407,7 +1407,7 @@ class StaffSchedulerBot:
             if time == schedule_data[day].get('end_time'):
                 end_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{day}_{time}"))
             else:
-                end_row.append(InlineKeyboardButton(f"🔴 {time}", callback_data=f"edit_end_{day}_{time}"))
+                end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"edit_end_{day}_{time}"))
         keyboard.append(end_row)
         
         # Add action buttons
@@ -2823,7 +2823,7 @@ class StaffSchedulerBot:
             if time == day_data['start_time']:
                 start_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_start_{current_day}_{time}"))
             else:
-                start_row.append(InlineKeyboardButton(f"🟢 {time}", callback_data=f"edit_start_{current_day}_{time}"))
+                start_row.append(InlineKeyboardButton(f"🟩 {time}", callback_data=f"edit_start_{current_day}_{time}"))
         keyboard.append(start_row)
         
         # End time row
@@ -2832,7 +2832,7 @@ class StaffSchedulerBot:
             if time == day_data['end_time']:
                 end_row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{current_day}_{time}"))
             else:
-                end_row.append(InlineKeyboardButton(f"🔴 {time}", callback_data=f"edit_end_{current_day}_{time}"))
+                end_row.append(InlineKeyboardButton(f"🔺 {time}", callback_data=f"edit_end_{current_day}_{time}"))
         keyboard.append(end_row)
         
         # Add action buttons
