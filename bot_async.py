@@ -596,17 +596,17 @@ class StaffSchedulerBot:
         """Show off days selection interface"""
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
         week_dates = context.user_data.get('week_dates', {})
+        week_start = context.user_data.get('week_start')
         
         # Use selected week from context, or calculate current week if not set
-        if not week_dates:
-            week_dates = context.user_data.get('week_dates', {})
-            week_start = context.user_data.get('week_start')
-            
-            if not week_dates or not week_start:
-                # Fallback to current week if no week selected
-                week_dates, week_start = self.calculate_week_dates()
-                context.user_data['week_dates'] = week_dates
-                context.user_data['week_start'] = week_start
+        if not week_dates or not week_start:
+            # Fallback to current week if no week selected
+            week_dates, week_start = self.calculate_week_dates()
+            context.user_data['week_dates'] = week_dates
+            context.user_data['week_start'] = week_start
+            print(f"DEBUG: show_off_days_selection - Fallback to current week: {week_dates}")
+        else:
+            print(f"DEBUG: show_off_days_selection - Using selected week: {week_dates}")
         
         date_range = self.format_date_range(week_dates)
         
