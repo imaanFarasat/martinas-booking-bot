@@ -2458,11 +2458,15 @@ class StaffSchedulerBot:
                 parse_mode=ParseMode.MARKDOWN
             )
             
+            # Get all staff names for complete PDF
+            all_staff = self.db.get_all_staff()
+            all_staff_names = [name for _, name in all_staff]
+            
             # Convert schedules to PDF-ready format
             pdf_ready_schedules = self.prepare_schedules_for_pdf(week_schedules)
             
-            # Generate PDF with selected week dates
-            pdf_filename = self.pdf_gen.generate_schedule_pdf(pdf_ready_schedules, week_dates, date_range)
+            # Generate PDF with selected week dates and all staff names
+            pdf_filename = self.pdf_gen.generate_schedule_pdf(pdf_ready_schedules, week_dates, date_range, all_staff_names=all_staff_names)
             
             # Send PDF
             with open(pdf_filename, 'rb') as pdf_file:
@@ -2551,11 +2555,15 @@ class StaffSchedulerBot:
             date_range = self.format_date_range(week_dates)
             print(f"DEBUG: Date range: {date_range}")
             
+            # Get all staff names for complete PDF
+            all_staff = self.db.get_all_staff()
+            all_staff_names = [name for _, name in all_staff]
+            
             # Convert schedules to PDF-ready format (use ALL schedules, no filtering)
             pdf_ready_schedules = self.prepare_schedules_for_pdf(schedules)
             
             print(f"DEBUG: Calling PDF generator with {len(pdf_ready_schedules)} converted records...")
-            pdf_filename = self.pdf_gen.generate_schedule_pdf(pdf_ready_schedules, week_dates, date_range)
+            pdf_filename = self.pdf_gen.generate_schedule_pdf(pdf_ready_schedules, week_dates, date_range, all_staff_names=all_staff_names)
             print(f"DEBUG: PDF generated successfully: {pdf_filename}")
             
             # Send PDF
@@ -3505,6 +3513,10 @@ class StaffSchedulerBot:
                 parse_mode=ParseMode.MARKDOWN
             )
             
+            # Get all staff names for complete PDF
+            all_staff = self.db.get_all_staff()
+            all_staff_names = [name for _, name in all_staff]
+            
             # Convert schedules to PDF-ready format
             pdf_ready_schedules = self.prepare_schedules_for_pdf(schedules)
             print(f"DEBUG: Historical converted data for {len(pdf_ready_schedules)} records")
@@ -3516,7 +3528,7 @@ class StaffSchedulerBot:
             historical_filename = f"schedule_{date_range.replace(' ', '_').replace(',', '')}_{timestamp}.pdf"
             
             print(f"DEBUG: Calling PDF generator for historical data...")
-            pdf_filename = self.pdf_gen.generate_schedule_pdf(pdf_ready_schedules, week_dates, date_range, historical_filename)
+            pdf_filename = self.pdf_gen.generate_schedule_pdf(pdf_ready_schedules, week_dates, date_range, historical_filename, all_staff_names=all_staff_names)
             print(f"DEBUG: Historical PDF generated successfully: {pdf_filename}")
             
             # Send PDF

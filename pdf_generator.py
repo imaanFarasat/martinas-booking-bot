@@ -13,12 +13,13 @@ class PDFGenerator:
         self.filename = PDF_FILENAME
         self.title = PDF_TITLE
     
-    def generate_schedule_pdf(self, schedule_data, week_dates=None, date_range=None, custom_filename=None):
+    def generate_schedule_pdf(self, schedule_data, week_dates=None, date_range=None, custom_filename=None, all_staff_names=None):
         """Generate PDF schedule"""
         try:
             print(f"DEBUG: Starting PDF generation with {len(schedule_data)} schedule entries")
             print(f"DEBUG: Schedule data sample: {schedule_data[:3] if schedule_data else 'No data'}")
             print(f"DEBUG: Schedule data type: {type(schedule_data)}")
+            print(f"DEBUG: All staff names provided: {all_staff_names}")
             
             # Use custom filename if provided, otherwise use default
             if custom_filename:
@@ -51,11 +52,16 @@ class PDFGenerator:
             
             print(f"DEBUG: Processing {len(schedule_data)} records")
             
-            # Initialize all employees with empty schedules first
-            all_employees = set()
-            for record in schedule_data:
-                if len(record) >= 1:
-                    all_employees.add(record[0])  # staff_name
+            # Get all staff members - use provided list or extract from schedule data
+            if all_staff_names:
+                all_employees = set(all_staff_names)
+                print(f"DEBUG: Using provided staff names: {all_employees}")
+            else:
+                all_employees = set()
+                for record in schedule_data:
+                    if len(record) >= 1:
+                        all_employees.add(record[0])  # staff_name
+                print(f"DEBUG: Extracted staff names from schedule data: {all_employees}")
             
             # Initialize employee schedules with "Not Set" for all days
             for employee in all_employees:
@@ -86,7 +92,7 @@ class PDFGenerator:
                     if start_time and end_time and start_time.strip() and end_time.strip():
                         day_info = f"{start_time.strip()}-{end_time.strip()}"
                     else:
-                        day_info = "Working (Times Not Set)"
+                        day_info = "Not Set"
                 else:
                     day_info = "Off"
                 
@@ -127,7 +133,6 @@ class PDFGenerator:
                         # Calculate hours for this day - improved logic
                         if (day_value != "Off" and 
                             day_value != "Not Set" and 
-                            day_value != "Working (Times Not Set)" and 
                             "-" in day_value):
                             try:
                                 # Extract start and end times (format: "09:00-17:00")
@@ -224,7 +229,7 @@ class PDFGenerator:
                         table_style.append(('BACKGROUND', (col_idx, row_idx), (col_idx, row_idx), very_light_red))
                     elif cell_value == "Not Set":
                         table_style.append(('BACKGROUND', (col_idx, row_idx), (col_idx, row_idx), very_light_yellow))
-                    elif "Working (Times Not Set)" in cell_value:
+                    elif cell_value == "Not Set":
                         table_style.append(('BACKGROUND', (col_idx, row_idx), (col_idx, row_idx), very_light_yellow))
             
             table.setStyle(TableStyle(table_style))
@@ -242,10 +247,9 @@ class PDFGenerator:
             )
             legend_text = """
             <b>Legend:</b><br/>
-            • <b>Working Times:</b> Shows start-end times (e.g., 09:00-17:00)<br/>
+            • <b>Time:</b> Shows start-end times (e.g., 09:00-17:00)<br/>
             • <b>Off:</b> Staff member is not working this day<br/>
-            • <b>Not Set:</b> Schedule not yet configured for this day<br/>
-            • <b>Working (Times Not Set):</b> Marked as working but times not specified<br/>
+            • <b>Not Set:</b> Marked as working but times not specified<br/>
             • <b>Total Hours:</b> Sum of all working hours for the week
             """
             legend = Paragraph(legend_text, legend_style)
