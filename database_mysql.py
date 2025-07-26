@@ -1252,6 +1252,66 @@ class MySQLManager:
             cursor.close()
             conn.close()
     
+    def get_staff_schedule_for_week(self, staff_id, week_start):
+        """Get a specific staff member's schedule for a week"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("START TRANSACTION")
+            try: cursor.fetchall()
+            except: pass
+            
+            week_end = week_start + timedelta(days=6)
+            
+            cursor.execute('''
+                SELECT day_of_week, schedule_date, is_working, start_time, end_time
+                FROM schedules
+                WHERE staff_id = %s AND schedule_date BETWEEN %s AND %s
+                ORDER BY 
+                    CASE day_of_week
+                        WHEN 'Sunday' THEN 1
+                        WHEN 'Monday' THEN 2
+                        WHEN 'Tuesday' THEN 3
+                        WHEN 'Wednesday' THEN 4
+                        WHEN 'Thursday' THEN 5
+                        WHEN 'Friday' THEN 6
+                        WHEN 'Saturday' THEN 7
+                    END
+            ''', (staff_id, week_start, week_end))
+            
+            schedules = cursor.fetchall()
+            try: cursor.fetchall()
+            except: pass
+            
+            cursor.execute("COMMIT")
+            try: cursor.fetchall()
+            except: pass
+            
+            # Convert to dictionary format
+            schedule_dict = {}
+            for day, schedule_date, is_working, start_time, end_time in schedules:
+                schedule_dict[day] = {
+                    'schedule_date': schedule_date,
+                    'is_working': is_working,
+                    'start_time': start_time,
+                    'end_time': end_time
+                }
+            
+            return schedule_dict
+            
+        except Exception as e:
+            try:
+                cursor.execute("ROLLBACK")
+                cursor.fetchall()
+            except:
+                pass
+            logger.error(f"Error getting staff schedule for week: {e}")
+            raise Exception(f"Error getting staff schedule for week: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+
     def get_weekly_coverage_stats(self, week_start_date):
         """Get coverage statistics for a specific week"""
         conn = self.get_connection()
