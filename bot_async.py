@@ -114,7 +114,7 @@ class StaffSchedulerBot:
             return await self.view_schedules(update, context)
         elif query.data == "export_pdf":
             print(f"DEBUG: export_pdf button clicked by user_id: {user_id}")
-            return await self.export_pdf(update, context)
+            return await self.show_pdf_week_selection(update, context)
         elif query.data == "bulk_schedule":
             await self.show_bulk_schedule_menu(update, context)
             return BULK_SCHEDULE
@@ -2283,6 +2283,81 @@ class StaffSchedulerBot:
         print(f"DEBUG: Converted {len(converted_schedules)} schedule records for PDF")
         return converted_schedules
     
+    async def export_pdf_for_week(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Export PDF for a specific selected week"""
+        try:
+            # Get the selected week information from context
+            week_dates = context.user_data.get('pdf_week_dates', {})
+            week_start = context.user_data.get('pdf_week_start')
+            date_range = context.user_data.get('pdf_date_range', 'Selected Week')
+            
+            if not week_dates or not week_start:
+                await update.callback_query.edit_message_text(
+                    "❌ Error: No week selected for PDF export.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]])
+                )
+                return MAIN_MENU
+            
+            # Get schedules for the selected week
+            week_end = week_start + timedelta(days=6)
+            schedules = self.db.get_all_schedules()
+            
+            # Filter schedules for the selected week
+            week_schedules = []
+            for schedule in schedules:
+                if len(schedule) >= 3 and schedule[2]:  # schedule_date exists
+                    try:
+                        schedule_date = datetime.strptime(schedule[2], '%Y-%m-%d').date()
+                        if week_start <= schedule_date <= week_end:
+                            week_schedules.append(schedule)
+                    except (ValueError, TypeError):
+                        continue
+            
+            if not week_schedules:
+                await update.callback_query.edit_message_text(
+                    f"❌ No schedules found for {date_range}.\n\nCreate schedules first to export PDF.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]])
+                )
+                return MAIN_MENU
+            
+            # Send a "generating" message first to prevent timeout
+            query = update.callback_query
+            await query.edit_message_text(
+                f"⏳ Generating PDF for {date_range}... Please wait.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+            # Convert schedules to PDF-ready format
+            pdf_ready_schedules = self.prepare_schedules_for_pdf(week_schedules)
+            
+            # Generate PDF with selected week dates
+            pdf_filename = self.pdf_gen.generate_schedule_pdf(pdf_ready_schedules, week_dates, date_range)
+            
+            # Send PDF
+            with open(pdf_filename, 'rb') as pdf_file:
+                await context.bot.send_document(
+                    chat_id=update.effective_chat.id,
+                    document=pdf_file,
+                    filename=pdf_filename,
+                    caption=f"📄 Weekly Staff Schedule - {date_range}"
+                )
+            
+            # Show success message
+            await query.edit_message_text(
+                f"✅ PDF exported successfully!\n\n📄 *{date_range}*\n\nPDF has been sent to this chat.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return MAIN_MENU
+            
+        except Exception as e:
+            logger.error(f"Error exporting PDF for week: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error generating PDF: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]])
+            )
+            return MAIN_MENU
+
     async def export_pdf(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Generate and send PDF schedule"""
         # Add debugging for admin access
@@ -3768,8 +3843,26 @@ class StaffSchedulerBot:
         # Calculate the selected week dates
         current_week_dates, current_week_start = self.calculate_week_dates()
         
+        # Handle PDF export week selection
+        if query.data in ["export_pdf_current", "export_pdf_next", "export_pdf_after_next"]:
+            if query.data == "export_pdf_current":
+                week_dates = current_week_dates
+                week_start = current_week_start
+            elif query.data == "export_pdf_next":
+                week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=7))
+            elif query.data == "export_pdf_after_next":
+                week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=14))
+            
+            # Store selected week dates in context for PDF generation
+            context.user_data['pdf_week_dates'] = week_dates
+            context.user_data['pdf_week_start'] = week_start
+            context.user_data['pdf_date_range'] = self.format_date_range(week_dates)
+            
+            # Generate PDF for the selected week
+            return await self.export_pdf_for_week(update, context)
+        
         # Handle "all staff" week selection (new flow)
-        if query.data in ["select_week_all_current", "select_week_all_next", "select_week_all_after_next"]:
+        elif query.data in ["select_week_all_current", "select_week_all_next", "select_week_all_after_next"]:
             if query.data == "select_week_all_current":
                 week_dates = current_week_dates
                 week_start = current_week_start
@@ -3784,6 +3877,10 @@ class StaffSchedulerBot:
             
             # Show staff selection menu for the selected week
             return await self.show_schedule_menu(update, context)
+        
+        # Handle historical PDF export
+        elif query.data == "export_pdf_historical":
+            return await self.show_schedule_history(update, context)
         
         # Handle individual staff week selection (existing flow)
         elif query.data in ["select_week_current", "select_week_next", "select_week_after_next"]:
@@ -3821,6 +3918,71 @@ class StaffSchedulerBot:
             return await self.show_schedule_input_form(update, context)
         
         return await self.show_schedule_menu(update, context)
+
+    async def show_pdf_week_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show week selection options for PDF export"""
+        # Calculate three week options
+        current_week_dates, current_week_start = self.calculate_week_dates()
+        next_week_dates, next_week_start = self.calculate_week_dates(current_week_start + timedelta(days=7))
+        week_after_next_dates, week_after_next_start = self.calculate_week_dates(current_week_start + timedelta(days=14))
+        
+        # Get current date in Toronto timezone
+        toronto_tz = pytz.timezone('America/Toronto')
+        today = datetime.now(toronto_tz).date()
+        
+        # Format date ranges
+        current_range = self.format_date_range(current_week_dates)
+        next_range = self.format_date_range(next_week_dates)
+        week_after_next_range = self.format_date_range(week_after_next_dates)
+        
+        # Check which days in current week are in the past
+        current_week_past_days = []
+        current_week_remaining_days = []
+        for day, date in current_week_dates.items():
+            if date < today:
+                current_week_past_days.append(day)
+            else:
+                current_week_remaining_days.append(day)
+        
+        text = f"📄 *Export PDF Schedule*\n\n"
+        text += f"Select which week's schedule to export as PDF:\n\n"
+        
+        # Current week option
+        if current_week_remaining_days:
+            text += f"🔄 *Current Week ({current_range})*\n"
+            if current_week_past_days:
+                text += f"   ⚠️ {len(current_week_past_days)} days completed, {len(current_week_remaining_days)} days remaining\n"
+            else:
+                text += f"   ✅ Full week available\n"
+        else:
+            text += f"❌ *Current Week ({current_range})*\n"
+            text += f"   ⏰ All days in the past\n"
+        
+        text += f"\n📅 *Next Week ({next_range})*\n"
+        text += f"   ✅ Full week available\n"
+        
+        text += f"\n📅 *Week After Next ({week_after_next_range})*\n"
+        text += f"   ✅ Full week available\n"
+        
+        text += f"\n📚 *Historical Weeks*\n"
+        text += f"   📖 View and export any past week\n"
+        
+        keyboard = []
+        
+        # Add current week button only if there are remaining days
+        if current_week_remaining_days:
+            keyboard.append([InlineKeyboardButton(f"🔄 Current Week ({current_range})", callback_data="export_pdf_current")])
+        
+        keyboard.append([InlineKeyboardButton(f"📅 Next Week ({next_range})", callback_data="export_pdf_next")])
+        keyboard.append([InlineKeyboardButton(f"📅 Week After Next ({week_after_next_range})", callback_data="export_pdf_after_next")])
+        keyboard.append([InlineKeyboardButton("📚 Historical Weeks", callback_data="export_pdf_historical")])
+        keyboard.append([InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        query = update.callback_query
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        return WEEK_SELECTION
 
     async def show_week_selection_for_all(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show week selection options for all staff scheduling"""
