@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Conversation states
-MAIN_MENU, STAFF_MANAGEMENT, ADD_STAFF, REMOVE_STAFF, SCHEDULE_MENU, SCHEDULE_INPUT, BULK_ADD_COUNT, BULK_ADD_NAMES, VIEW_SCHEDULES, BULK_SCHEDULE, WEEKLY_STATS, SCHEDULE_TEMPLATES, SCHEDULE_HISTORY, WEEK_SELECTION, CHECK_ATTENDANCE = range(15)
+MAIN_MENU, STAFF_MANAGEMENT, ADD_STAFF, REMOVE_STAFF, SCHEDULE_MENU, SCHEDULE_INPUT, BULK_ADD_COUNT, BULK_ADD_NAMES, VIEW_SCHEDULES, BULK_SCHEDULE, WEEKLY_STATS, SCHEDULE_TEMPLATES, SCHEDULE_HISTORY, WEEK_SELECTION, CHECK_ATTENDANCE, OPEN_CLOSE_ATTENDANCE = range(16)
 
 class StaffSchedulerBot:
     def __init__(self):
@@ -167,12 +167,15 @@ class StaffSchedulerBot:
         
         if text in ['check', 'Check']:
             return await self.show_check_week_selection(update, context)
+        elif text in ['open', 'Open']:
+            return await self.show_open_week_selection(update, context)
         else:
             # Unknown text command, show main menu
             await update.message.reply_text(
                 "🤖 *Staff Scheduler Bot*\n\n"
                 "Available commands:\n"
-                "• Type 'check' or 'Check' to view staff attendance\n\n"
+                "• Type 'check' or 'Check' to view staff attendance\n"
+                "• Type 'open' or 'Open' to view opening/closing staff\n\n"
                 "Or use the buttons below:",
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -331,6 +334,194 @@ class StaffSchedulerBot:
             logger.error(f"Error showing week attendance: {e}")
             await update.callback_query.edit_message_text(
                 f"❌ Error checking attendance: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]])
+            )
+            return MAIN_MENU
+    
+    async def show_open_week_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show week selection for opening/closing staff check"""
+        # Calculate three week options
+        current_week_dates, current_week_start = self.calculate_week_dates()
+        next_week_dates, next_week_start = self.calculate_week_dates(current_week_start + timedelta(days=7))
+        week_after_next_dates, week_after_next_start = self.calculate_week_dates(current_week_start + timedelta(days=14))
+        
+        # Format date ranges
+        current_range = self.format_date_range(current_week_dates)
+        next_range = self.format_date_range(next_week_dates)
+        week_after_next_range = self.format_date_range(week_after_next_dates)
+        
+        text = f"🚪 *Opening/Closing Staff*\n\n"
+        text += f"Select which week to check opening/closing staff:\n\n"
+        text += f"*Opening time:* 9:45\n"
+        text += f"*Closing time:* 21:00\n\n"
+        
+        # Current week option
+        text += f"🔄 *Current Week ({current_range})*\n"
+        text += f"   ✅ Full week available\n"
+        
+        text += f"\n📅 *Next Week ({next_range})*\n"
+        text += f"   ✅ Full week available\n"
+        
+        text += f"\n📅 *Week After Next ({week_after_next_range})*\n"
+        text += f"   ✅ Full week available\n"
+        
+        keyboard = [
+            [InlineKeyboardButton(f"🔄 Current Week ({current_range})", callback_data="open_current_week")],
+            [InlineKeyboardButton(f"📅 Next Week ({next_range})", callback_data="open_next_week")],
+            [InlineKeyboardButton(f"📅 Week After Next ({week_after_next_range})", callback_data="open_after_next_week")],
+            [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        else:
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        
+        return OPEN_CLOSE_ATTENDANCE
+    
+    async def handle_open_close_attendance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle opening/closing attendance check callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "back_main":
+            return await self.show_main_menu(update, context)
+        elif query.data == "open_another_week":
+            return await self.show_open_week_selection(update, context)
+        
+        # Calculate the selected week dates
+        current_week_dates, current_week_start = self.calculate_week_dates()
+        
+        if query.data == "open_current_week":
+            week_dates = current_week_dates
+            week_start = current_week_start
+        elif query.data == "open_next_week":
+            week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=7))
+        elif query.data == "open_after_next_week":
+            week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=14))
+        else:
+            return await self.show_main_menu(update, context)
+        
+        # Show opening/closing staff for the selected week
+        return await self.show_week_open_close_attendance(update, context, week_dates, week_start)
+    
+    async def show_week_open_close_attendance(self, update: Update, context: ContextTypes.DEFAULT_TYPE, week_dates, week_start):
+        """Show opening and closing staff for a specific week"""
+        try:
+            # Get all schedules for the week
+            week_end = week_start + timedelta(days=6)
+            all_schedules = self.db.get_all_schedules()
+            
+            # Filter schedules for the selected week
+            week_schedules = []
+            for schedule in all_schedules:
+                if len(schedule) >= 3 and schedule[2]:  # schedule_date exists
+                    try:
+                        schedule_date_str = str(schedule[2])
+                        if hasattr(schedule[2], 'date'):
+                            schedule_date = schedule[2].date()
+                        else:
+                            schedule_date = datetime.strptime(schedule_date_str, '%Y-%m-%d').date()
+                        
+                        if week_start <= schedule_date <= week_end:
+                            week_schedules.append(schedule)
+                    except (ValueError, TypeError):
+                        continue
+            
+            # Organize opening/closing staff by day
+            open_close_by_day = {}
+            for day in DAYS_OF_WEEK:
+                open_close_by_day[day] = {'opening': [], 'closing': []}
+            
+            # Process schedules to find opening and closing staff
+            for schedule in week_schedules:
+                if len(schedule) >= 6:
+                    staff_name, day, schedule_date, is_working, start_time, end_time = schedule[:6]
+                    
+                    if is_working and start_time and end_time:
+                        try:
+                            start_time_str = self.format_time_for_display(start_time)
+                            end_time_str = self.format_time_for_display(end_time)
+                            
+                            if start_time_str and end_time_str:
+                                start_dt = datetime.strptime(start_time_str, "%H:%M")
+                                end_dt = datetime.strptime(end_time_str, "%H:%M")
+                                opening_time = datetime.strptime("09:45", "%H:%M")
+                                closing_time = datetime.strptime("21:00", "%H:%M")
+                                
+                                # Check if staff opens (starts at 9:45)
+                                if start_dt == opening_time:
+                                    if staff_name not in open_close_by_day[day]['opening']:
+                                        open_close_by_day[day]['opening'].append(staff_name)
+                                
+                                # Check if staff closes (ends at 21:00)
+                                if end_dt == closing_time:
+                                    if staff_name not in open_close_by_day[day]['closing']:
+                                        open_close_by_day[day]['closing'].append(staff_name)
+                                        
+                        except (ValueError, TypeError):
+                            continue
+            
+            # Create opening/closing display
+            date_range = self.format_date_range(week_dates)
+            text = f"🚪 *Opening/Closing Staff*\n\n"
+            text += f"*Week:* {date_range}\n"
+            text += f"*Opening:* 9:45 | *Closing:* 21:00\n\n"
+            
+            for day in DAYS_OF_WEEK:
+                opening_staff = open_close_by_day[day]['opening']
+                closing_staff = open_close_by_day[day]['closing']
+                
+                total_count = len(opening_staff) + len(closing_staff)
+                
+                if total_count > 0:
+                    # Check if any staff member is both opening and closing
+                    same_person = False
+                    if opening_staff and closing_staff:
+                        # Check for any overlap between opening and closing staff
+                        opening_set = set(opening_staff)
+                        closing_set = set(closing_staff)
+                        if opening_set.intersection(closing_set):
+                            same_person = True
+                    
+                    # Build the display string
+                    display_parts = []
+                    
+                    if opening_staff:
+                        opening_names = ", ".join(opening_staff)
+                        display_parts.append(f"{opening_names} (opening)")
+                    
+                    if closing_staff:
+                        closing_names = ", ".join(closing_staff)
+                        display_parts.append(f"{closing_names} (closing)")
+                    
+                    display_text = " - ".join(display_parts)
+                    
+                    # Add status indicator
+                    if same_person:
+                        text += f"*{day} ({total_count})* ❌ {display_text}\n"
+                    else:
+                        text += f"*{day} ({total_count})* ✅ {display_text}\n"
+                else:
+                    text += f"*{day} (0)* No opening/closing staff\n"
+            
+            # Add action buttons
+            keyboard = [
+                [InlineKeyboardButton("🔄 Check Another Week", callback_data="open_another_week")],
+                [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
+            return OPEN_CLOSE_ATTENDANCE
+            
+        except Exception as e:
+            logger.error(f"Error showing week open/close attendance: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error checking opening/closing staff: {str(e)}",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]])
             )
             return MAIN_MENU
@@ -2865,6 +3056,9 @@ class StaffSchedulerBot:
                 ],
                 CHECK_ATTENDANCE: [
                     CallbackQueryHandler(self.handle_check_attendance)
+                ],
+                OPEN_CLOSE_ATTENDANCE: [
+                    CallbackQueryHandler(self.handle_open_close_attendance)
                 ]
             },
             fallbacks=[CommandHandler("start", self.start)],

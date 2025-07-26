@@ -45,6 +45,12 @@ def test_check_command_logic():
     print("   - Show week selection (current, next, after next)")
     print("   - Display staff working at 9:45 for each day")
     print("   - Format: 'Day (count) Staff1 - Staff2'")
+    
+    print("\n🚪 The Open command will:")
+    print("   - Accept 'open' or 'Open' text input")
+    print("   - Show week selection (current, next, after next)")
+    print("   - Display opening staff (9:45) and closing staff (21:00)")
+    print("   - Format: 'Day (count) Staff1, Staff2 (opening) - Staff3, Staff4 (closing)'")
 
 if __name__ == "__main__":
     print("🧪 Testing Check Command Logic")
