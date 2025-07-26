@@ -491,21 +491,23 @@ class StaffSchedulerBot:
                     
                     if opening_staff:
                         opening_names = ", ".join(opening_staff)
-                        display_parts.append(f"{opening_names} (opening)")
+                        opening_count = len(opening_staff)
+                        display_parts.append(f"{opening_names} (opening-{opening_count})")
                     
                     if closing_staff:
                         closing_names = ", ".join(closing_staff)
-                        display_parts.append(f"{closing_names} (closing)")
+                        closing_count = len(closing_staff)
+                        display_parts.append(f"{closing_names} (closing-{closing_count})")
                     
                     display_text = " - ".join(display_parts)
                     
                     # Add status indicator
                     if same_person:
-                        text += f"*{day} ({total_count})* ❌ {display_text}\n"
+                        text += f"*{day}* ❌ {display_text}\n"
                     else:
-                        text += f"*{day} ({total_count})* ✅ {display_text}\n"
+                        text += f"*{day}* ✅ {display_text}\n"
                 else:
-                    text += f"*{day} (0)* No opening/closing staff\n"
+                    text += f"*{day}* No opening/closing staff\n"
             
             # Add action buttons
             keyboard = [
