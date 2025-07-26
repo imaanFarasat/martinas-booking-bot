@@ -140,6 +140,8 @@ class StaffSchedulerBot:
         elif query.data == "schedule_history":
             await self.show_schedule_history(update, context)
             return SCHEDULE_HISTORY
+        elif query.data == "export_all_schedules":
+            return await self.export_pdf(update, context)
         elif query.data.startswith("view_week_"):
             week_key = query.data.split("_")[2]
             return await self.view_week_schedule(update, context, week_key)
@@ -2399,23 +2401,55 @@ class StaffSchedulerBot:
             week_end = week_start + timedelta(days=6)
             schedules = self.db.get_all_schedules()
             
+            print(f"DEBUG: export_pdf_for_week - Looking for schedules between {week_start} and {week_end}")
+            print(f"DEBUG: export_pdf_for_week - Found {len(schedules)} total schedules in database")
+            
             # Filter schedules for the selected week
             week_schedules = []
             for schedule in schedules:
                 if len(schedule) >= 3 and schedule[2]:  # schedule_date exists
                     try:
-                        schedule_date = datetime.strptime(schedule[2], '%Y-%m-%d').date()
+                        # Handle different date formats
+                        schedule_date_str = str(schedule[2])
+                        if hasattr(schedule[2], 'date'):  # Already a date object
+                            schedule_date = schedule[2].date()
+                        else:
+                            schedule_date = datetime.strptime(schedule_date_str, '%Y-%m-%d').date()
+                        
+                        print(f"DEBUG: Checking schedule date {schedule_date} against range {week_start} - {week_end}")
+                        
                         if week_start <= schedule_date <= week_end:
                             week_schedules.append(schedule)
-                    except (ValueError, TypeError):
+                            print(f"DEBUG: Added schedule for {schedule[0]} on {schedule[1]} ({schedule_date})")
+                    except (ValueError, TypeError) as e:
+                        print(f"DEBUG: Error parsing date '{schedule[2]}': {e}")
                         continue
             
+            print(f"DEBUG: export_pdf_for_week - Filtered to {len(week_schedules)} schedules for selected week")
+            
             if not week_schedules:
-                await update.callback_query.edit_message_text(
-                    f"❌ No schedules found for {date_range}.\n\nCreate schedules first to export PDF.",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]])
-                )
-                return MAIN_MENU
+                # Check if there are any schedules at all
+                if schedules:
+                    # Offer to export all schedules instead
+                    keyboard = [
+                        [InlineKeyboardButton("📄 Export All Schedules", callback_data="export_all_schedules")],
+                        [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    await update.callback_query.edit_message_text(
+                        f"❌ No schedules found for {date_range}.\n\n"
+                        f"However, there are {len(schedules)} total schedules in the database.\n\n"
+                        f"Would you like to export all schedules instead?",
+                        reply_markup=reply_markup
+                    )
+                    return MAIN_MENU
+                else:
+                    await update.callback_query.edit_message_text(
+                        f"❌ No schedules found for {date_range}.\n\nCreate schedules first to export PDF.",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]])
+                    )
+                    return MAIN_MENU
             
             # Send a "generating" message first to prevent timeout
             query = update.callback_query
