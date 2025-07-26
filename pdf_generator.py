@@ -116,11 +116,29 @@ class PDFGenerator:
             
             table_data = [header_row]
             
+            # Define special staff members who should appear at the end
+            special_staff = ['Kim', 'Gee', 'Shanine']
+            
+            # Sort employees: regular staff first, then special staff
+            regular_employees = []
+            special_employees = []
+            
+            for employee in sorted(employee_schedules.keys()):
+                if employee in special_staff:
+                    special_employees.append(employee)
+                else:
+                    regular_employees.append(employee)
+            
+            # Combine lists with special staff at the end
+            sorted_employees = regular_employees + special_employees
+            print(f"DEBUG: Sorted employees - Regular: {regular_employees}, Special: {special_employees}")
+            
             # Add employee rows
             if not employee_schedules:
                 table_data.append(['No schedules found'] + [''] * 8)  # 7 days + 1 total hours column
             else:
-                for employee, schedule in sorted(employee_schedules.items()):  # Sort by employee name
+                for employee in sorted_employees:  # Use the custom sorted order
+                    schedule = employee_schedules[employee]
                     print(f"DEBUG: Adding employee row for: {employee}")
                     row = [employee]
                     total_hours = 0
@@ -181,6 +199,7 @@ class PDFGenerator:
             # Create color scheme
             very_light_red = colors.Color(1.0, 0.95, 0.95)  # Very light red for "Off"
             very_light_yellow = colors.Color(1.0, 1.0, 0.9)  # Very light yellow for "Not Set"
+            special_staff_color = colors.Color(0.95, 0.95, 1.0)  # Very light purple for special staff
             
             # Base table style
             table_style = [
@@ -222,8 +241,13 @@ class PDFGenerator:
                 ('WORDWRAP', (0, 0), (-1, -1), True),
             ]
             
-            # Add conditional styling for different cell values
+            # Add conditional styling for different cell values and special staff
             for row_idx, row in enumerate(table_data[1:], 1):  # Skip header row
+                employee_name = row[0]  # First column is employee name
+                
+                # Check if this is a special staff member
+                is_special_staff = employee_name in special_staff
+                
                 for col_idx, cell_value in enumerate(row[1:-1], 1):  # Skip employee name and Total Hours columns
                     if cell_value == "Off":
                         table_style.append(('BACKGROUND', (col_idx, row_idx), (col_idx, row_idx), very_light_red))
@@ -231,6 +255,15 @@ class PDFGenerator:
                         table_style.append(('BACKGROUND', (col_idx, row_idx), (col_idx, row_idx), very_light_yellow))
                     elif cell_value == "Not Set":
                         table_style.append(('BACKGROUND', (col_idx, row_idx), (col_idx, row_idx), very_light_yellow))
+                
+                # Apply special background color for special staff members (entire row except employee name and total hours columns)
+                if is_special_staff:
+                    # Apply special color to all schedule columns (1 to -2, excluding employee name and total hours)
+                    table_style.append(('BACKGROUND', (1, row_idx), (-2, row_idx), special_staff_color))
+                    # Also apply special color to employee name column for special staff
+                    table_style.append(('BACKGROUND', (0, row_idx), (0, row_idx), special_staff_color))
+                    # And apply special color to total hours column for special staff
+                    table_style.append(('BACKGROUND', (-1, row_idx), (-1, row_idx), special_staff_color))
             
             table.setStyle(TableStyle(table_style))
             
@@ -250,7 +283,8 @@ class PDFGenerator:
             • <b>Time:</b> Shows start-end times (e.g., 09:00-17:00)<br/>
             • <b>Off:</b> Staff member is not working this day<br/>
             • <b>Not Set:</b> Marked as working but times not specified<br/>
-            • <b>Total Hours:</b> Sum of all working hours for the week
+            • <b>Total Hours:</b> Sum of all working hours for the week<br/>
+            • <b>Special Staff:</b> Kim, Gee, and Shanine are highlighted and listed at the end
             """
             legend = Paragraph(legend_text, legend_style)
             elements.append(legend)
