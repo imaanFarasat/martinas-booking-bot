@@ -508,12 +508,19 @@ class StaffSchedulerBot:
         """Show existing schedule for a staff member with edit options"""
         staff_name = context.user_data.get('current_staff_name', 'Unknown')
         
-        # Clear any old schedule data to prevent interference
+        # Clear any old schedule data to prevent interference, but preserve week context
         old_staff_id = context.user_data.get('current_staff_id')
         old_staff_name = context.user_data.get('current_staff_name')
+        week_dates = context.user_data.get('week_dates', {})
+        week_start = context.user_data.get('week_start')
+        
         context.user_data.clear()
         context.user_data['current_staff_id'] = old_staff_id
         context.user_data['current_staff_name'] = old_staff_name
+        context.user_data['week_dates'] = week_dates
+        context.user_data['week_start'] = week_start
+        
+        print(f"DEBUG: show_existing_schedule - Preserved week context: {week_dates}")
         
         print(f"DEBUG: show_existing_schedule - Cleared context and set fresh data for {staff_name}")
         print(f"DEBUG: Existing schedule data: {existing_schedule}")
@@ -1245,6 +1252,9 @@ class StaffSchedulerBot:
             week_dates, week_start = self.calculate_week_dates()
             context.user_data['week_dates'] = week_dates
             context.user_data['week_start'] = week_start
+            print(f"DEBUG: edit_off_days - Fallback to current week: {week_dates}")
+        else:
+            print(f"DEBUG: edit_off_days - Using selected week: {week_dates}")
         
         # Go to off days selection
         return await self.show_off_days_selection(update, context)
