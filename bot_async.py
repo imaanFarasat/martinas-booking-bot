@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Conversation states
-MAIN_MENU, STAFF_MANAGEMENT, ADD_STAFF, REMOVE_STAFF, SCHEDULE_MENU, SCHEDULE_INPUT, BULK_ADD_COUNT, BULK_ADD_NAMES, VIEW_SCHEDULES, BULK_SCHEDULE, WEEKLY_STATS, SCHEDULE_TEMPLATES, SCHEDULE_HISTORY, WEEK_SELECTION = range(14)
+MAIN_MENU, STAFF_MANAGEMENT, ADD_STAFF, REMOVE_STAFF, SCHEDULE_MENU, SCHEDULE_INPUT, BULK_ADD_COUNT, BULK_ADD_NAMES, VIEW_SCHEDULES, BULK_SCHEDULE, WEEKLY_STATS, SCHEDULE_TEMPLATES, SCHEDULE_HISTORY, WEEK_SELECTION, CHECK_ATTENDANCE = range(15)
 
 class StaffSchedulerBot:
     def __init__(self):
@@ -152,6 +152,188 @@ class StaffSchedulerBot:
             return await self.quick_edit_staff(update, context, staff_name)
         
         return MAIN_MENU
+    
+    async def handle_main_menu_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle text messages in main menu (for Check command)"""
+        user_id = update.effective_user.id
+        
+        if not self.is_admin(user_id):
+            await update.message.reply_text(
+                "❌ You are not authorized to use this bot. Please contact the administrator."
+            )
+            return ConversationHandler.END
+        
+        text = update.message.text.strip().lower()
+        
+        if text in ['check', 'Check']:
+            return await self.show_check_week_selection(update, context)
+        else:
+            # Unknown text command, show main menu
+            await update.message.reply_text(
+                "🤖 *Staff Scheduler Bot*\n\n"
+                "Available commands:\n"
+                "• Type 'check' or 'Check' to view staff attendance\n\n"
+                "Or use the buttons below:",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return await self.show_main_menu(update, context)
+    
+    async def show_check_week_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show week selection for attendance check"""
+        # Calculate three week options
+        current_week_dates, current_week_start = self.calculate_week_dates()
+        next_week_dates, next_week_start = self.calculate_week_dates(current_week_start + timedelta(days=7))
+        week_after_next_dates, week_after_next_start = self.calculate_week_dates(current_week_start + timedelta(days=14))
+        
+        # Get current date in Toronto timezone
+        toronto_tz = pytz.timezone('America/Toronto')
+        today = datetime.now(toronto_tz).date()
+        
+        # Format date ranges
+        current_range = self.format_date_range(current_week_dates)
+        next_range = self.format_date_range(next_week_dates)
+        week_after_next_range = self.format_date_range(week_after_next_dates)
+        
+        text = f"📋 *Check Staff Attendance*\n\n"
+        text += f"Select which week to check attendance:\n\n"
+        
+        # Current week option
+        text += f"🔄 *Current Week ({current_range})*\n"
+        text += f"   ✅ Full week available\n"
+        
+        text += f"\n📅 *Next Week ({next_range})*\n"
+        text += f"   ✅ Full week available\n"
+        
+        text += f"\n📅 *Week After Next ({week_after_next_range})*\n"
+        text += f"   ✅ Full week available\n"
+        
+        keyboard = [
+            [InlineKeyboardButton(f"🔄 Current Week ({current_range})", callback_data="check_current_week")],
+            [InlineKeyboardButton(f"📅 Next Week ({next_range})", callback_data="check_next_week")],
+            [InlineKeyboardButton(f"📅 Week After Next ({week_after_next_range})", callback_data="check_after_next_week")],
+            [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if update.message:
+            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        else:
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        
+        return CHECK_ATTENDANCE
+    
+    async def handle_check_attendance(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle attendance check callbacks"""
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "back_main":
+            return await self.show_main_menu(update, context)
+        elif query.data == "check_another_week":
+            return await self.show_check_week_selection(update, context)
+        
+        # Calculate the selected week dates
+        current_week_dates, current_week_start = self.calculate_week_dates()
+        
+        if query.data == "check_current_week":
+            week_dates = current_week_dates
+            week_start = current_week_start
+        elif query.data == "check_next_week":
+            week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=7))
+        elif query.data == "check_after_next_week":
+            week_dates, week_start = self.calculate_week_dates(current_week_start + timedelta(days=14))
+        else:
+            return await self.show_main_menu(update, context)
+        
+        # Show attendance for the selected week
+        return await self.show_week_attendance(update, context, week_dates, week_start)
+    
+    async def show_week_attendance(self, update: Update, context: ContextTypes.DEFAULT_TYPE, week_dates, week_start):
+        """Show staff attendance for a specific week"""
+        try:
+            # Get all schedules for the week
+            week_end = week_start + timedelta(days=6)
+            all_schedules = self.db.get_all_schedules()
+            
+            # Filter schedules for the selected week
+            week_schedules = []
+            for schedule in all_schedules:
+                if len(schedule) >= 3 and schedule[2]:  # schedule_date exists
+                    try:
+                        schedule_date_str = str(schedule[2])
+                        if hasattr(schedule[2], 'date'):
+                            schedule_date = schedule[2].date()
+                        else:
+                            schedule_date = datetime.strptime(schedule_date_str, '%Y-%m-%d').date()
+                        
+                        if week_start <= schedule_date <= week_end:
+                            week_schedules.append(schedule)
+                    except (ValueError, TypeError):
+                        continue
+            
+            # Get all staff
+            all_staff = self.db.get_all_staff()
+            staff_names = [name for _, name in all_staff]
+            
+            # Organize attendance by day
+            attendance_by_day = {}
+            for day in DAYS_OF_WEEK:
+                attendance_by_day[day] = []
+            
+            # Process schedules to find staff working at 9:45
+            for schedule in week_schedules:
+                if len(schedule) >= 6:
+                    staff_name, day, schedule_date, is_working, start_time, end_time = schedule[:6]
+                    
+                    if is_working and start_time:
+                        # Check if staff starts at or before 9:45
+                        try:
+                            start_time_str = self.format_time_for_display(start_time)
+                            if start_time_str:
+                                start_dt = datetime.strptime(start_time_str, "%H:%M")
+                                check_time = datetime.strptime("09:45", "%H:%M")
+                                
+                                if start_dt <= check_time:
+                                    # Add to attendance list for this day
+                                    if staff_name not in attendance_by_day[day]:
+                                        attendance_by_day[day].append(staff_name)
+                        except (ValueError, TypeError):
+                            continue
+            
+            # Create attendance display
+            date_range = self.format_date_range(week_dates)
+            text = f"📋 *Staff Attendance at 9:45*\n\n"
+            text += f"*Week:* {date_range}\n\n"
+            
+            for day in DAYS_OF_WEEK:
+                staff_list = attendance_by_day[day]
+                count = len(staff_list)
+                
+                if count > 0:
+                    staff_names_str = " - ".join(staff_list)
+                    text += f"*{day} ({count})* {staff_names_str}\n"
+                else:
+                    text += f"*{day} (0)* No staff at 9:45\n"
+            
+            # Add action buttons
+            keyboard = [
+                [InlineKeyboardButton("🔄 Check Another Week", callback_data="check_another_week")],
+                [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
+            return CHECK_ATTENDANCE
+            
+        except Exception as e:
+            logger.error(f"Error showing week attendance: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error checking attendance: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]])
+            )
+            return MAIN_MENU
     
     async def show_staff_management(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show staff management menu"""
@@ -2638,7 +2820,8 @@ class StaffSchedulerBot:
             entry_points=[CommandHandler("start", self.start)],
             states={
                 MAIN_MENU: [
-                    CallbackQueryHandler(self.handle_main_menu)
+                    CallbackQueryHandler(self.handle_main_menu),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_main_menu_text)
                 ],
                 STAFF_MANAGEMENT: [
                     CallbackQueryHandler(self.handle_staff_management)
@@ -2679,6 +2862,9 @@ class StaffSchedulerBot:
                 ],
                 WEEK_SELECTION: [
                     CallbackQueryHandler(self.handle_week_selection)
+                ],
+                CHECK_ATTENDANCE: [
+                    CallbackQueryHandler(self.handle_check_attendance)
                 ]
             },
             fallbacks=[CommandHandler("start", self.start)],
