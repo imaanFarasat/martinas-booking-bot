@@ -3068,6 +3068,13 @@ class StaffSchedulerBot:
         application.add_handler(conv_handler)
         
         try:
+            # Clear any existing webhook to prevent conflicts
+            try:
+                await application.bot.delete_webhook(drop_pending_updates=True)
+                logger.info("✅ Cleared existing webhook")
+            except Exception as e:
+                logger.info(f"ℹ️ No webhook to clear: {e}")
+            
             # Initialize the application
             await application.initialize()
             await application.start()
