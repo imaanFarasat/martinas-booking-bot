@@ -249,6 +249,41 @@ class PostgreSQLManager:
         conn.close()
         return week_schedules
     
+    def get_current_week_schedules(self, current_week_start):
+        """Get schedules from the current week for copying to next week"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Calculate current week end
+            current_week_end = current_week_start + timedelta(days=6)
+            
+            cursor.execute('''
+                SELECT s.name, sch.staff_id, sch.day_of_week, sch.schedule_date, 
+                       sch.is_working, sch.start_time, sch.end_time
+                FROM staff s
+                JOIN schedules sch ON s.id = sch.staff_id
+                WHERE sch.schedule_date BETWEEN %s AND %s
+                ORDER BY s.name, 
+                    CASE sch.day_of_week
+                        WHEN 'Sunday' THEN 1
+                        WHEN 'Monday' THEN 2
+                        WHEN 'Tuesday' THEN 3
+                        WHEN 'Wednesday' THEN 4
+                        WHEN 'Thursday' THEN 5
+                        WHEN 'Friday' THEN 6
+                        WHEN 'Saturday' THEN 7
+                    END
+            ''', (current_week_start, current_week_end))
+            
+            schedules = cursor.fetchall()
+            conn.close()
+            return schedules
+            
+        except Exception as e:
+            conn.close()
+            raise Exception(f"Error getting current week schedules: {e}")
+    
     def migrate_from_sqlite(self, sqlite_db_path):
         """Migrate data from SQLite to PostgreSQL"""
         import sqlite3

@@ -3964,6 +3964,7 @@ class StaffSchedulerBot:
         
         keyboard = [
             [InlineKeyboardButton("📋 Copy from Previous Week", callback_data="copy_previous_week")],
+            [InlineKeyboardButton("🔄 Mirror Current Week to Next", callback_data="copy_current_week_to_next")],
             [InlineKeyboardButton("📅 Schedule All Staff (Fresh)", callback_data="schedule_all_fresh")],
             [InlineKeyboardButton("📊 Apply Template", callback_data="apply_template")],
             [InlineKeyboardButton("⚡ Quick Schedule (Same Times)", callback_data="quick_schedule")],
@@ -4321,8 +4322,14 @@ class StaffSchedulerBot:
         elif query.data == "copy_previous_week":
             await self.copy_previous_week(update, context)
             return BULK_SCHEDULE
+        elif query.data == "copy_current_week_to_next":
+            await self.copy_current_week_to_next(update, context)
+            return BULK_SCHEDULE
         elif query.data == "confirm_copy_previous":
             await self.confirm_copy_previous(update, context)
+            return BULK_SCHEDULE
+        elif query.data == "confirm_copy_current_to_next":
+            await self.confirm_copy_current_to_next(update, context)
             return BULK_SCHEDULE
         elif query.data == "quick_schedule":
             await self.quick_schedule(update, context)
@@ -4653,6 +4660,189 @@ class StaffSchedulerBot:
         query = update.callback_query
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         return WEEK_SELECTION
+
+    async def copy_current_week_to_next(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Copy schedules from current week to next week"""
+        try:
+            # Calculate current week dates
+            current_week_dates, current_week_start = self.calculate_week_dates()
+            current_date_range = self.format_date_range(current_week_dates)
+            
+            # Calculate next week dates
+            next_week_start = current_week_start + timedelta(days=7)
+            next_week_dates = {}
+            for i, day in enumerate(DAYS_OF_WEEK):
+                date = next_week_start + timedelta(days=i)
+                next_week_dates[day] = date
+            next_date_range = self.format_date_range(next_week_dates)
+            
+            # Get current week's schedules
+            current_schedules = self.db.get_current_week_schedules(current_week_start)
+            
+            if not current_schedules:
+                text = "❌ *No Current Week Found*\n\n"
+                text += "No schedules found for the current week to copy from.\n\n"
+                text += "Please create schedules for the current week first."
+                
+                keyboard = [
+                    [InlineKeyboardButton("📅 Create Current Week Schedules", callback_data="set_schedule")],
+                    [InlineKeyboardButton("🔙 Back to Bulk Menu", callback_data="bulk_schedule")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+                return MAIN_MENU
+            
+            # Organize current schedules by staff
+            staff_schedules = {}
+            for staff_name, staff_id, day_of_week, schedule_date, is_working, start_time, end_time in current_schedules:
+                if staff_name not in staff_schedules:
+                    staff_schedules[staff_name] = {'staff_id': staff_id, 'schedule': {}}
+                
+                # Format times for display
+                formatted_start = self.format_time_for_display(start_time)
+                formatted_end = self.format_time_for_display(end_time)
+                
+                staff_schedules[staff_name]['schedule'][day_of_week] = {
+                    'is_working': bool(is_working),
+                    'start_time': formatted_start or '',
+                    'end_time': formatted_end or '',
+                    'date': next_week_dates[day_of_week]  # Update to next week dates
+                }
+            
+            # Store in context for editing
+            context.user_data['bulk_schedule_data'] = staff_schedules
+            context.user_data['week_dates'] = next_week_dates
+            context.user_data['week_start'] = next_week_start
+            
+            # Show preview
+            text = f"📋 *Preview: Copy Current Week to Next Week*\n\n"
+            text += f"*From Week:* {current_date_range}\n"
+            text += f"*To Week:* {next_date_range}\n\n"
+            text += f"Found schedules for {len(staff_schedules)} staff members:\n\n"
+            
+            for staff_name, data in staff_schedules.items():
+                schedule = data['schedule']
+                working_days = sum(1 for day_data in schedule.values() if day_data.get('is_working', True))
+                off_days = 7 - working_days
+                text += f"*{staff_name}:* {working_days} working, {off_days} off\n"
+            
+            text += f"\nWould you like to proceed with copying these schedules to next week?"
+            
+            keyboard = [
+                [InlineKeyboardButton("✅ Copy & Save All", callback_data="confirm_copy_current_to_next")],
+                [InlineKeyboardButton("✏️ Copy & Edit First", callback_data="copy_current_and_edit")],
+                [InlineKeyboardButton("🔙 Back to Bulk Menu", callback_data="bulk_schedule")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            return MAIN_MENU
+            
+        except Exception as e:
+            logger.error(f"Error copying current week to next: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error accessing current week data: {str(e)}\n\nPlease try again or contact administrator.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+            return MAIN_MENU
+
+    async def confirm_copy_current_to_next(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Confirm and save copied schedules from current week to next week"""
+        try:
+            bulk_schedule_data = context.user_data.get('bulk_schedule_data', {})
+            week_start = context.user_data.get('week_start')
+            
+            if not bulk_schedule_data or not week_start:
+                await update.callback_query.edit_message_text(
+                    "❌ No schedule data found. Please try again.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+                )
+                return MAIN_MENU
+            
+            # Show progress message
+            await update.callback_query.edit_message_text(
+                "⏳ *Copying Schedules to Next Week...*\n\nPlease wait while we copy the current week's schedules.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+            # Prepare data for bulk save
+            schedules_data = []
+            for staff_name, data in bulk_schedule_data.items():
+                staff_id = data['staff_id']
+                schedule_data = data['schedule']
+                schedules_data.append((staff_id, staff_name, schedule_data))
+            
+            # Detect conflicts before saving
+            conflicts, warnings = self.db.detect_schedule_conflicts(schedules_data, week_start)
+            
+            # Create scheduling session
+            session_id = self.db.create_scheduling_session(week_start, f"BULK_COPY_CURRENT_{update.effective_user.id}")
+            
+            # Save all schedules atomically
+            success, saved_count, failed_saves = self.db.save_bulk_schedules(schedules_data, week_start, f"BULK_COPY_CURRENT_{update.effective_user.id}")
+            
+            if success:
+                # Complete the session
+                self.db.complete_scheduling_session(session_id)
+                
+                # Show success message
+                text = "✅ *Schedules Copied Successfully!*\n\n"
+                text += f"📅 *Next Week:* {self.format_date_range(context.user_data.get('week_dates', {}))}\n"
+                text += f"👥 *Staff Scheduled:* {saved_count}\n\n"
+                
+                if warnings:
+                    text += "⚠️ *Warnings:*\n"
+                    for warning in warnings[:3]:  # Show first 3 warnings
+                        text += f"• {warning}\n"
+                    if len(warnings) > 3:
+                        text += f"• ... and {len(warnings) - 3} more\n"
+                    text += "\n"
+                
+                if conflicts:
+                    text += "🚨 *Conflicts Detected:*\n"
+                    for conflict in conflicts[:3]:  # Show first 3 conflicts
+                        text += f"• {conflict}\n"
+                    if len(conflicts) > 3:
+                        text += f"• ... and {len(conflicts) - 3} more\n"
+                    text += "\n"
+                
+                text += "✅ All schedules have been copied to next week successfully!"
+                
+                keyboard = [
+                    [InlineKeyboardButton("📋 View Next Week Schedules", callback_data="view_schedules")],
+                    [InlineKeyboardButton("📊 Weekly Stats", callback_data="weekly_stats")],
+                    [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_main")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+                return MAIN_MENU
+            else:
+                # Show error message
+                text = "❌ *Error Copying Schedules*\n\n"
+                text += f"Failed to save {len(failed_saves)} schedules:\n\n"
+                
+                for staff_name, error in failed_saves[:5]:  # Show first 5 errors
+                    text += f"• {staff_name}: {error}\n"
+                
+                if len(failed_saves) > 5:
+                    text += f"• ... and {len(failed_saves) - 5} more\n"
+                
+                text += "\nPlease try again or contact administrator."
+                
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Try Again", callback_data="copy_current_week_to_next")],
+                    [InlineKeyboardButton("🔙 Back to Bulk Menu", callback_data="bulk_schedule")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+                return MAIN_MENU
+                
+        except Exception as e:
+            logger.error(f"Error confirming copy current to next: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error copying schedules: {str(e)}\n\nPlease try again or contact administrator.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+            return MAIN_MENU
 
 if __name__ == "__main__":
     bot = StaffSchedulerBot()

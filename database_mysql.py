@@ -1367,3 +1367,56 @@ class MySQLManager:
         finally:
             cursor.close()
             conn.close() 
+
+    def get_current_week_schedules(self, current_week_start):
+        """Get schedules from the current week for copying to next week"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("START TRANSACTION")
+            try: cursor.fetchall()
+            except: pass
+            
+            # Calculate current week end
+            current_week_end = current_week_start + timedelta(days=6)
+            
+            cursor.execute('''
+                SELECT s.name, sch.staff_id, sch.day_of_week, sch.schedule_date, 
+                       sch.is_working, sch.start_time, sch.end_time
+                FROM staff s
+                JOIN schedules sch ON s.id = sch.staff_id
+                WHERE sch.schedule_date BETWEEN %s AND %s
+                ORDER BY s.name, 
+                    CASE sch.day_of_week
+                        WHEN 'Sunday' THEN 1
+                        WHEN 'Monday' THEN 2
+                        WHEN 'Tuesday' THEN 3
+                        WHEN 'Wednesday' THEN 4
+                        WHEN 'Thursday' THEN 5
+                        WHEN 'Friday' THEN 6
+                        WHEN 'Saturday' THEN 7
+                    END
+            ''', (current_week_start, current_week_end))
+            
+            schedules = cursor.fetchall()
+            try: cursor.fetchall()
+            except: pass
+            
+            cursor.execute("COMMIT")
+            try: cursor.fetchall()
+            except: pass
+            
+            return schedules
+            
+        except Exception as e:
+            try:
+                cursor.execute("ROLLBACK")
+                cursor.fetchall()
+            except:
+                pass
+            logger.error(f"Error getting current week schedules: {e}")
+            raise Exception(f"Error getting current week schedules: {e}")
+        finally:
+            cursor.close()
+            conn.close() 
