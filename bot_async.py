@@ -1398,8 +1398,8 @@ class StaffSchedulerBot:
         text += f"End: {day_data['end_time'] or 'Not set'}\n\n"
         text += f"Please select the remaining time:"
         
-        # Start time options (9:45 AM to 5 PM)
-        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00"]
+        # Start time options (9:45 AM to 6 PM)
+        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00", "18:00"]
         end_times = ["14:00", "17:00", "18:00", "19:00", "20:00", "21:00"]
         
         keyboard = []
@@ -1553,8 +1553,8 @@ class StaffSchedulerBot:
         text += f"\n*Setting times for:* {current_day} ({current_date_str})\n\n"
         text += f"Please select the start and end times:"
         
-        # Start time options (9:45 AM to 5 PM)
-        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00"]
+        # Start time options (9:45 AM to 6 PM)
+        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00", "18:00"]
         end_times = ["14:00", "17:00", "18:00", "19:00", "20:00", "21:00"]
         
         keyboard = []
@@ -1759,8 +1759,8 @@ class StaffSchedulerBot:
         text += f"Current times: {day_data['start_time']} - {day_data['end_time']}\n\n"
         text += f"Please select new times:"
         
-        # Start time options (9:45 AM to 5 PM)
-        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00"]
+        # Start time options (9:45 AM to 6 PM)
+        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00", "18:00"]
         end_times = ["14:00", "17:00", "18:00", "19:00", "20:00", "21:00"]
         
         keyboard = []
@@ -3212,7 +3212,7 @@ class StaffSchedulerBot:
         
         # Create simpler time picker keyboard
         keyboard = []
-        start_times = ["09:45", "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "17:00"]
+        start_times = ["09:45", "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "17:00", "18:00"]
         
         # Create rows of 5 time slots each
         for i in range(0, len(start_times), 5):
@@ -3311,8 +3311,8 @@ class StaffSchedulerBot:
         # Create time picker keyboard with structured layout
         keyboard = []
         
-        # Start time options (exactly like original: 9:45 AM to 5 PM)
-        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00"]
+        # Start time options (exactly like original: 9:45 AM to 6 PM)
+        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00", "18:00"]
         end_times = ["14:00", "17:00", "18:00", "19:00", "20:00", "21:00"]
         
         # Start Time Section Header
