@@ -117,7 +117,7 @@ class PDFGenerator:
             table_data = [header_row]
             
             # Define special staff members who should appear at the end
-            special_staff = ['Kim', 'Gee', 'Shanine']
+            special_staff = ['Shanine', 'Kenza']
             
             # Sort employees: regular staff first, then special staff
             regular_employees = []
@@ -284,7 +284,7 @@ class PDFGenerator:
             • <b>Off:</b> Staff member is not working this day<br/>
             • <b>Not Set:</b> Marked as working but times not specified<br/>
             • <b>Total Hours:</b> Sum of all working hours for the week<br/>
-            • <b>Special Staff:</b> Kim, Gee, and Shanine are highlighted and listed at the end
+            • <b>Admin/Receptionist:</b> Staff with light purple background are admins or receptionists and listed at the end
             """
             legend = Paragraph(legend_text, legend_style)
             elements.append(legend)
