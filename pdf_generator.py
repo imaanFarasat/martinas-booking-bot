@@ -193,8 +193,11 @@ class PDFGenerator:
             
             print(f"DEBUG: Final table data: {table_data}")
             
-            # Create table
-            table = Table(table_data)
+            # Create table with explicit column widths
+            # Column widths: Employee (1.2"), 7 days (0.8" each), Total Hours (0.8")
+            # Total width: 1.2 + (7 * 0.8) + 0.8 = 7.6 inches (fits within letter page ~8.5")
+            col_widths = [1.2*inch] + [0.8*inch] * 7 + [0.8*inch]  # Employee + 7 days + Total Hours
+            table = Table(table_data, colWidths=col_widths)
             
             # Create color scheme
             very_light_red = colors.Color(1.0, 0.95, 0.95)  # Very light red for "Off"
@@ -207,9 +210,9 @@ class PDFGenerator:
                 ('BACKGROUND', (0, 0), (-1, 0), colors.blue),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('TOPPADDING', (0, 0), (-1, 0), 12),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),  # Slightly smaller header font
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),  # Reduce padding
+                ('TOPPADDING', (0, 0), (-1, 0), 8),  # Reduce padding
                 
                 # Content styling - white background
                 ('BACKGROUND', (0, 1), (-1, -1), colors.white),
@@ -224,12 +227,12 @@ class PDFGenerator:
                 # Employee column styling - light blue background
                 ('BACKGROUND', (0, 1), (0, -1), colors.lightblue),
                 ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 1), (0, -1), 10),
+                ('FONTSIZE', (0, 1), (0, -1), 9),  # Slightly smaller font for better fit
                 
                 # Total Hours column styling - light green background and bold text
                 ('BACKGROUND', (-1, 1), (-1, -1), colors.lightgreen),
                 ('FONTNAME', (-1, 1), (-1, -1), 'Helvetica-Bold'),
-                ('FONTSIZE', (-1, 1), (-1, -1), 10),
+                ('FONTSIZE', (-1, 1), (-1, -1), 9),  # Slightly smaller font for better fit
                 
                 # Cell padding for better spacing
                 ('LEFTPADDING', (0, 0), (-1, -1), 4),
@@ -239,6 +242,11 @@ class PDFGenerator:
                 
                 # Multi-line text support
                 ('WORDWRAP', (0, 0), (-1, -1), True),
+                
+                # Ensure text fits within columns
+                ('FONTSIZE', (0, 0), (-1, -1), 8),  # Slightly smaller font for better fit
+                ('LEFTPADDING', (0, 0), (-1, -1), 2),  # Reduce left padding
+                ('RIGHTPADDING', (0, 0), (-1, -1), 2),  # Reduce right padding
             ]
             
             # Add conditional styling for different cell values and special staff
