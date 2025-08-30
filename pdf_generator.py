@@ -117,7 +117,7 @@ class PDFGenerator:
             table_data = [header_row]
             
             # Define special staff members who should appear at the end
-            special_staff = ['Shanine', 'Kenza']
+            special_staff = ['Shanine', 'Kenza', 'Stacy']
             
             # Sort employees: regular staff first, then special staff
             regular_employees = []
