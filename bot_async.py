@@ -1399,7 +1399,7 @@ class StaffSchedulerBot:
         text += f"Please select the remaining time:"
         
         # Start time options (9:45 AM to 6 PM)
-        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00", "18:00"]
+        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "15:30", "17:00", "18:00"]
         end_times = ["14:00", "17:00", "18:00", "19:00", "20:00", "21:00"]
         
         keyboard = []
@@ -1407,34 +1407,34 @@ class StaffSchedulerBot:
         # Start Time Section Header
         keyboard.append([InlineKeyboardButton("🟩 Start Time", callback_data="header_start")])
         
-        # Start time options (3 per row for better layout)
+        # Start time options (2 per row for better button display)
         start_rows = []
-        for i in range(0, len(start_times), 3):
+        for i in range(0, len(start_times), 2):
             row = []
-            for j in range(3):
+            for j in range(2):
                 if i + j < len(start_times):
                     time = start_times[i + j]
                     if time == day_data['start_time']:
                         row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"start_{time}"))
                     else:
-                        row.append(InlineKeyboardButton(time, callback_data=f"start_{time}"))
+                        row.append(InlineKeyboardButton(f"🕐 {time}", callback_data=f"start_{time}"))
             if row:
                 keyboard.append(row)
         
         # End Time Section Header
         keyboard.append([InlineKeyboardButton("🔺 End Time", callback_data="header_end")])
         
-        # End time options (3 per row for better layout)
+        # End time options (2 per row for better button display)
         end_rows = []
-        for i in range(0, len(end_times), 3):
+        for i in range(0, len(end_times), 2):
             row = []
-            for j in range(3):
+            for j in range(2):
                 if i + j < len(end_times):
                     time = end_times[i + j]
                     if time == day_data['end_time']:
                         row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"end_{time}"))
                     else:
-                        row.append(InlineKeyboardButton(time, callback_data=f"end_{time}"))
+                        row.append(InlineKeyboardButton(f"🕐 {time}", callback_data=f"end_{time}"))
             if row:
                 keyboard.append(row)
         
@@ -1554,7 +1554,7 @@ class StaffSchedulerBot:
         text += f"Please select the start and end times:"
         
         # Start time options (9:45 AM to 6 PM)
-        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00", "18:00"]
+        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "15:30", "17:00", "18:00"]
         end_times = ["14:00", "17:00", "18:00", "19:00", "20:00", "21:00"]
         
         keyboard = []
@@ -1562,26 +1562,26 @@ class StaffSchedulerBot:
         # Start Time Section Header
         keyboard.append([InlineKeyboardButton("🟩 Start Time", callback_data="header_start")])
         
-        # Start time options (3 per row for better layout)
-        for i in range(0, len(start_times), 3):
+        # Start time options (2 per row for better button display)
+        for i in range(0, len(start_times), 2):
             row = []
-            for j in range(3):
+            for j in range(2):
                 if i + j < len(start_times):
                     time = start_times[i + j]
-                    row.append(InlineKeyboardButton(time, callback_data=f"start_{time}"))
+                    row.append(InlineKeyboardButton(f"🕐 {time}", callback_data=f"start_{time}"))
             if row:
                 keyboard.append(row)
         
         # End Time Section Header
         keyboard.append([InlineKeyboardButton("🔺 End Time", callback_data="header_end")])
         
-        # End time options (3 per row for better layout)
-        for i in range(0, len(end_times), 3):
+        # End time options (2 per row for better button display)
+        for i in range(0, len(end_times), 2):
             row = []
-            for j in range(3):
+            for j in range(2):
                 if i + j < len(end_times):
                     time = end_times[i + j]
-                    row.append(InlineKeyboardButton(time, callback_data=f"end_{time}"))
+                    row.append(InlineKeyboardButton(f"🕐 {time}", callback_data=f"end_{time}"))
             if row:
                 keyboard.append(row)
         
@@ -1760,7 +1760,7 @@ class StaffSchedulerBot:
         text += f"Please select new times:"
         
         # Start time options (9:45 AM to 6 PM)
-        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00", "18:00"]
+        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "15:30", "17:00", "18:00"]
         end_times = ["14:00", "17:00", "18:00", "19:00", "20:00", "21:00"]
         
         keyboard = []
@@ -1768,32 +1768,32 @@ class StaffSchedulerBot:
         # Start Time Section Header
         keyboard.append([InlineKeyboardButton("🟩 Start Time", callback_data="header_start")])
         
-        # Start time options (3 per row for better layout)
-        for i in range(0, len(start_times), 3):
+        # Start time options (2 per row for better button display)
+        for i in range(0, len(start_times), 2):
             row = []
-            for j in range(3):
+            for j in range(2):
                 if i + j < len(start_times):
                     time = start_times[i + j]
                     if time == day_data['start_time']:
                         row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_start_{day}_{time}"))
                     else:
-                        row.append(InlineKeyboardButton(time, callback_data=f"edit_start_{day}_{time}"))
+                        row.append(InlineKeyboardButton(f"🕐 {time}", callback_data=f"edit_start_{day}_{time}"))
             if row:
                 keyboard.append(row)
         
         # End Time Section Header
         keyboard.append([InlineKeyboardButton("🔺 End Time", callback_data="header_end")])
         
-        # End time options (3 per row for better layout)
-        for i in range(0, len(end_times), 3):
+        # End time options (2 per row for better button display)
+        for i in range(0, len(end_times), 2):
             row = []
-            for j in range(3):
+            for j in range(2):
                 if i + j < len(end_times):
                     time = end_times[i + j]
                     if time == day_data['end_time']:
                         row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{day}_{time}"))
                     else:
-                        row.append(InlineKeyboardButton(time, callback_data=f"edit_end_{day}_{time}"))
+                        row.append(InlineKeyboardButton(f"🕐 {time}", callback_data=f"edit_end_{day}_{time}"))
             if row:
                 keyboard.append(row)
         
@@ -1841,16 +1841,16 @@ class StaffSchedulerBot:
         # End Time Section Header
         keyboard.append([InlineKeyboardButton("🔺 End Time", callback_data="header_end")])
         
-        # End time options (3 per row for better layout)
-        for i in range(0, len(end_times), 3):
+        # End time options (2 per row for better button display)
+        for i in range(0, len(end_times), 2):
             row = []
-            for j in range(3):
+            for j in range(2):
                 if i + j < len(end_times):
                     time = end_times[i + j]
                     if time == schedule_data[day].get('end_time'):
                         row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{day}_{time}"))
                     else:
-                        row.append(InlineKeyboardButton(time, callback_data=f"edit_end_{day}_{time}"))
+                        row.append(InlineKeyboardButton(f"🕐 {time}", callback_data=f"edit_end_{day}_{time}"))
             if row:
                 keyboard.append(row)
         
@@ -3212,15 +3212,15 @@ class StaffSchedulerBot:
         
         # Create simpler time picker keyboard
         keyboard = []
-        start_times = ["09:45", "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "17:00", "18:00"]
+        start_times = ["09:45", "10:00", "10:30", "11:00", "11:30", "12:00", "12:30", "13:00", "13:30", "14:00", "15:00", "15:30", "17:00", "18:00"]
         
-        # Create rows of 5 time slots each
-        for i in range(0, len(start_times), 5):
+        # Create rows of 3 time slots each for better button display
+        for i in range(0, len(start_times), 3):
             row = []
-            for j in range(5):
+            for j in range(3):
                 if i + j < len(start_times):
                     time_slot = start_times[i + j]
-                    row.append(InlineKeyboardButton(time_slot, callback_data=f"edit_start_{day}_{time_slot}"))
+                    row.append(InlineKeyboardButton(f"🕐 {time_slot}", callback_data=f"edit_start_{day}_{time_slot}"))
             keyboard.append(row)
         
         # Add back button
@@ -3249,13 +3249,13 @@ class StaffSchedulerBot:
         keyboard = []
         end_times = ["17:00", "17:30", "18:00", "18:30", "19:00", "19:30", "20:00", "20:30", "21:00"]
         
-        # Create rows of 5 time slots each
-        for i in range(0, len(end_times), 5):
+        # Create rows of 3 time slots each for better button display
+        for i in range(0, len(end_times), 3):
             row = []
-            for j in range(5):
+            for j in range(3):
                 if i + j < len(end_times):
                     time_slot = end_times[i + j]
-                    row.append(InlineKeyboardButton(time_slot, callback_data=f"edit_end_{day}_{time_slot}"))
+                    row.append(InlineKeyboardButton(f"🕐 {time_slot}", callback_data=f"edit_end_{day}_{time_slot}"))
             keyboard.append(row)
         
         # Add back button
@@ -3312,38 +3312,38 @@ class StaffSchedulerBot:
         keyboard = []
         
         # Start time options (exactly like original: 9:45 AM to 6 PM)
-        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "17:00", "18:00"]
+        start_times = ["09:45", "10:00", "11:00", "12:00", "13:00", "15:00", "15:30", "17:00", "18:00"]
         end_times = ["14:00", "17:00", "18:00", "19:00", "20:00", "21:00"]
         
         # Start Time Section Header
         keyboard.append([InlineKeyboardButton("🟩 Start Time", callback_data="header_start")])
         
-        # Start time options (3 per row for better layout)
-        for i in range(0, len(start_times), 3):
+        # Start time options (2 per row for better button display)
+        for i in range(0, len(start_times), 2):
             row = []
-            for j in range(3):
+            for j in range(2):
                 if i + j < len(start_times):
                     time = start_times[i + j]
                     if time == day_data['start_time']:
                         row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_start_{current_day}_{time}"))
                     else:
-                        row.append(InlineKeyboardButton(time, callback_data=f"edit_start_{current_day}_{time}"))
+                        row.append(InlineKeyboardButton(f"🕐 {time}", callback_data=f"edit_start_{current_day}_{time}"))
             if row:
                 keyboard.append(row)
         
         # End Time Section Header
         keyboard.append([InlineKeyboardButton("🔺 End Time", callback_data="header_end")])
         
-        # End time options (3 per row for better layout)
-        for i in range(0, len(end_times), 3):
+        # End time options (2 per row for better button display)
+        for i in range(0, len(end_times), 2):
             row = []
-            for j in range(3):
+            for j in range(2):
                 if i + j < len(end_times):
                     time = end_times[i + j]
                     if time == day_data['end_time']:
                         row.append(InlineKeyboardButton(f"✅ {time}", callback_data=f"edit_end_{current_day}_{time}"))
                     else:
-                        row.append(InlineKeyboardButton(time, callback_data=f"edit_end_{current_day}_{time}"))
+                        row.append(InlineKeyboardButton(f"🕐 {time}", callback_data=f"edit_end_{current_day}_{time}"))
             if row:
                 keyboard.append(row)
         
@@ -3377,13 +3377,13 @@ class StaffSchedulerBot:
             "18:45", "19:00", "19:15", "19:30", "19:45", "20:00", "20:15", "20:30", "20:45", "21:00"
         ]
         
-        # Create rows of 4 time slots each
-        for i in range(0, len(time_slots), 4):
+        # Create rows of 3 time slots each for better button display
+        for i in range(0, len(time_slots), 3):
             row = []
-            for j in range(4):
+            for j in range(3):
                 if i + j < len(time_slots):
                     time_slot = time_slots[i + j]
-                    row.append(InlineKeyboardButton(time_slot, callback_data=f"set_start_all_{time_slot}"))
+                    row.append(InlineKeyboardButton(f"🕐 {time_slot}", callback_data=f"set_start_all_{time_slot}"))
             keyboard.append(row)
         
         # Add back button
@@ -3413,13 +3413,13 @@ class StaffSchedulerBot:
             "18:45", "19:00", "19:15", "19:30", "19:45", "20:00", "20:15", "20:30", "20:45", "21:00"
         ]
         
-        # Create rows of 4 time slots each
-        for i in range(0, len(time_slots), 4):
+        # Create rows of 3 time slots each for better button display
+        for i in range(0, len(time_slots), 3):
             row = []
-            for j in range(4):
+            for j in range(3):
                 if i + j < len(time_slots):
                     time_slot = time_slots[i + j]
-                    row.append(InlineKeyboardButton(time_slot, callback_data=f"set_end_all_{time_slot}"))
+                    row.append(InlineKeyboardButton(f"🕐 {time_slot}", callback_data=f"set_end_all_{time_slot}"))
             keyboard.append(row)
         
         # Add back button
@@ -3453,7 +3453,7 @@ class StaffSchedulerBot:
             for j in range(2):
                 if i + j < len(time_ranges):
                     time_range = time_ranges[i + j]
-                    row.append(InlineKeyboardButton(time_range, callback_data=f"set_both_all_{time_range}"))
+                    row.append(InlineKeyboardButton(f"🕐 {time_range}", callback_data=f"set_both_all_{time_range}"))
             keyboard.append(row)
         
         # Add back button
