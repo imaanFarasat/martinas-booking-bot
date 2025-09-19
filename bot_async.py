@@ -3049,7 +3049,8 @@ class StaffSchedulerBot:
                     CallbackQueryHandler(self.view_schedules)
                 ],
                 BULK_SCHEDULE: [
-                    CallbackQueryHandler(self.handle_bulk_schedule)
+                    CallbackQueryHandler(self.handle_bulk_schedule),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_bulk_schedule_text)
                 ],
                 WEEKLY_STATS: [
                     CallbackQueryHandler(self.handle_weekly_stats)
@@ -4353,6 +4354,34 @@ class StaffSchedulerBot:
         elif query.data == "confirm_copy_current_to_next":
             await self.confirm_copy_current_to_next(update, context)
             return BULK_SCHEDULE
+        elif query.data == "copy_and_edit":
+            await self.copy_and_edit(update, context)
+            return BULK_SCHEDULE
+        elif query.data == "copy_current_and_edit":
+            await self.copy_current_and_edit(update, context)
+            return BULK_SCHEDULE
+        elif query.data.startswith("edit_day_"):
+            day = query.data.replace("edit_day_", "")
+            await self.show_edit_staff_selection(update, context, day)
+            return BULK_SCHEDULE
+        elif query.data.startswith("edit_staff_"):
+            staff_name = query.data.replace("edit_staff_", "")
+            await self.show_edit_staff_schedule(update, context, staff_name)
+            return BULK_SCHEDULE
+        elif query.data.startswith("set_off_"):
+            staff_name = query.data.replace("set_off_", "")
+            await self.set_staff_off(update, context, staff_name)
+            return BULK_SCHEDULE
+        elif query.data.startswith("edit_times_"):
+            staff_name = query.data.replace("edit_times_", "")
+            await self.edit_staff_times(update, context, staff_name)
+            return BULK_SCHEDULE
+        elif query.data == "save_and_continue":
+            await self.save_and_continue_edit(update, context)
+            return BULK_SCHEDULE
+        elif query.data == "finish_editing":
+            await self.finish_editing(update, context)
+            return BULK_SCHEDULE
         elif query.data == "quick_schedule":
             await self.quick_schedule(update, context)
             return BULK_SCHEDULE
@@ -4360,6 +4389,140 @@ class StaffSchedulerBot:
             return await self.show_main_menu(update, context)
         
         return BULK_SCHEDULE
+
+    async def handle_bulk_schedule_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle text input for bulk schedule operations (time editing)"""
+        try:
+            # Check if we're waiting for time input
+            if context.user_data.get('waiting_for_time_input', False):
+                staff_name = context.user_data.get('time_input_staff', '')
+                user_input = update.message.text.strip().lower()
+                
+                if user_input == 'off':
+                    # Set as off
+                    await self.set_staff_off_from_text(update, context, staff_name)
+                else:
+                    # Parse time input
+                    await self.parse_time_input(update, context, staff_name, user_input)
+                
+                # Clear waiting state
+                context.user_data.pop('waiting_for_time_input', None)
+                context.user_data.pop('time_input_staff', None)
+                
+                return BULK_SCHEDULE
+            else:
+                # Not waiting for input, ignore
+                return BULK_SCHEDULE
+                
+        except Exception as e:
+            logger.error(f"Error handling bulk schedule text: {e}")
+            await update.message.reply_text(
+                f"❌ Error processing input: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+            return BULK_SCHEDULE
+
+    async def set_staff_off_from_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE, staff_name: str):
+        """Set staff as off from text input"""
+        try:
+            editable_schedules = context.user_data.get('editable_schedules', {})
+            day = context.user_data.get('edit_current_day', '')
+            
+            # Update the schedule to set as off
+            if staff_name in editable_schedules:
+                schedule = editable_schedules[staff_name].get('schedule', {})
+                schedule[day] = {
+                    'is_working': False,
+                    'start_time': '',
+                    'end_time': '',
+                    'date': context.user_data.get('edit_week_dates', {}).get(day)
+                }
+                editable_schedules[staff_name]['schedule'] = schedule
+                context.user_data['editable_schedules'] = editable_schedules
+            
+            text = f"✅ *Updated Successfully*\n\n"
+            text += f"*{staff_name}* is now set as **Off** for {day}\n\n"
+            text += "What would you like to do next?"
+            
+            keyboard = [
+                [InlineKeyboardButton("✏️ Edit Another Staff", callback_data=f"edit_day_{day}")],
+                [InlineKeyboardButton("📅 Choose Different Day", callback_data="copy_and_edit" if context.user_data.get('edit_mode') == 'previous_week' else "copy_current_and_edit")],
+                [InlineKeyboardButton("✅ Finish Editing", callback_data="finish_editing")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
+        except Exception as e:
+            logger.error(f"Error setting staff off from text: {e}")
+            await update.message.reply_text(
+                f"❌ Error updating schedule: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+
+    async def parse_time_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE, staff_name: str, user_input: str):
+        """Parse and validate time input from user"""
+        try:
+            # Validate time format (HH:MM-HH:MM)
+            if '-' not in user_input:
+                await update.message.reply_text(
+                    "❌ Invalid format. Please use `HH:MM-HH:MM` format.\n\n"
+                    "Examples: `09:00-17:00`, `13:00-21:00`",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"edit_staff_{staff_name}")]])
+                )
+                return
+            
+            try:
+                start_time, end_time = user_input.split('-')
+                start_time = start_time.strip()
+                end_time = end_time.strip()
+                
+                # Validate time format
+                datetime.strptime(start_time, '%H:%M')
+                datetime.strptime(end_time, '%H:%M')
+                
+                # Update the schedule
+                editable_schedules = context.user_data.get('editable_schedules', {})
+                day = context.user_data.get('edit_current_day', '')
+                
+                if staff_name in editable_schedules:
+                    schedule = editable_schedules[staff_name].get('schedule', {})
+                    schedule[day] = {
+                        'is_working': True,
+                        'start_time': start_time,
+                        'end_time': end_time,
+                        'date': context.user_data.get('edit_week_dates', {}).get(day)
+                    }
+                    editable_schedules[staff_name]['schedule'] = schedule
+                    context.user_data['editable_schedules'] = editable_schedules
+                
+                text = f"✅ *Updated Successfully*\n\n"
+                text += f"*{staff_name}* is now scheduled for {day}\n"
+                text += f"*Time:* {start_time}-{end_time}\n\n"
+                text += "What would you like to do next?"
+                
+                keyboard = [
+                    [InlineKeyboardButton("✏️ Edit Another Staff", callback_data=f"edit_day_{day}")],
+                    [InlineKeyboardButton("📅 Choose Different Day", callback_data="copy_and_edit" if context.user_data.get('edit_mode') == 'previous_week' else "copy_current_and_edit")],
+                    [InlineKeyboardButton("✅ Finish Editing", callback_data="finish_editing")]
+                ]
+                
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+                
+            except ValueError:
+                await update.message.reply_text(
+                    "❌ Invalid time format. Please use `HH:MM-HH:MM` format.\n\n"
+                    "Examples: `09:00-17:00`, `13:00-21:00`",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"edit_staff_{staff_name}")]])
+                )
+                
+        except Exception as e:
+            logger.error(f"Error parsing time input: {e}")
+            await update.message.reply_text(
+                f"❌ Error processing time input: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
 
     async def handle_weekly_stats(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle weekly stats callbacks"""
@@ -4862,6 +5025,398 @@ class StaffSchedulerBot:
             logger.error(f"Error confirming mirror current to next: {e}")
             await update.callback_query.edit_message_text(
                 f"❌ Error mirroring schedules: {str(e)}\n\nPlease try again or contact administrator.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+            return MAIN_MENU
+
+    async def copy_and_edit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start the copy and edit process for previous week mirroring"""
+        try:
+            # Get the bulk schedule data from context (set by mirror_previous_week)
+            bulk_data = context.user_data.get('bulk_schedule_data', {})
+            week_dates = context.user_data.get('week_dates', {})
+            week_start = context.user_data.get('week_start')
+            
+            if not bulk_data or not week_dates:
+                await update.callback_query.edit_message_text(
+                    "❌ Error: No schedule data found. Please try mirroring again.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+                )
+                return MAIN_MENU
+            
+            # Store editing state
+            context.user_data['edit_mode'] = 'previous_week'
+            context.user_data['editable_schedules'] = bulk_data
+            context.user_data['edit_week_dates'] = week_dates
+            context.user_data['edit_week_start'] = week_start
+            context.user_data['edit_current_day'] = None
+            context.user_data['edit_current_staff'] = None
+            
+            # Show day selection
+            await self.show_edit_day_selection(update, context)
+            return BULK_SCHEDULE
+            
+        except Exception as e:
+            logger.error(f"Error starting copy and edit: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error starting edit mode: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+            return MAIN_MENU
+
+    async def copy_current_and_edit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start the copy and edit process for current week mirroring"""
+        try:
+            # Get the bulk schedule data from context (set by mirror_current_week)
+            bulk_data = context.user_data.get('bulk_schedule_data', {})
+            week_dates = context.user_data.get('week_dates', {})
+            week_start = context.user_data.get('week_start')
+            
+            if not bulk_data or not week_dates:
+                await update.callback_query.edit_message_text(
+                    "❌ Error: No schedule data found. Please try mirroring again.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+                )
+                return MAIN_MENU
+            
+            # Store editing state
+            context.user_data['edit_mode'] = 'current_week'
+            context.user_data['editable_schedules'] = bulk_data
+            context.user_data['edit_week_dates'] = week_dates
+            context.user_data['edit_week_start'] = week_start
+            context.user_data['edit_current_day'] = None
+            context.user_data['edit_current_staff'] = None
+            
+            # Show day selection
+            await self.show_edit_day_selection(update, context)
+            return BULK_SCHEDULE
+            
+        except Exception as e:
+            logger.error(f"Error starting copy current and edit: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error starting edit mode: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+            return MAIN_MENU
+
+    async def show_edit_day_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show day selection interface for editing"""
+        try:
+            week_dates = context.user_data.get('edit_week_dates', {})
+            edit_mode = context.user_data.get('edit_mode', 'previous_week')
+            
+            mode_text = "Previous Week" if edit_mode == 'previous_week' else "Current Week"
+            
+            text = f"✏️ *Edit {mode_text} Schedules*\n\n"
+            text += "Which day do you want to change?\n\n"
+            
+            # Create day buttons
+            keyboard = []
+            for day in DAYS_OF_WEEK:
+                date = week_dates.get(day)
+                if date:
+                    date_str = date.strftime('%b %d')
+                    button_text = f"{day}\n({date_str})"
+                    keyboard.append([InlineKeyboardButton(button_text, callback_data=f"edit_day_{day}")])
+            
+            # Add back button
+            keyboard.append([InlineKeyboardButton("🔙 Back to Mirror Options", callback_data="bulk_schedule")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
+        except Exception as e:
+            logger.error(f"Error showing day selection: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error showing day selection: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+
+    async def show_edit_staff_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, day: str):
+        """Show staff selection for the chosen day"""
+        try:
+            editable_schedules = context.user_data.get('editable_schedules', {})
+            week_dates = context.user_data.get('edit_week_dates', {})
+            edit_mode = context.user_data.get('edit_mode', 'previous_week')
+            
+            # Store current day being edited
+            context.user_data['edit_current_day'] = day
+            
+            mode_text = "Previous Week" if edit_mode == 'previous_week' else "Current Week"
+            date = week_dates.get(day)
+            date_str = date.strftime('%B %d, %Y') if date else day
+            
+            text = f"✏️ *Edit {mode_text} Schedules*\n\n"
+            text += f"*{day} - {date_str}*\n\n"
+            text += "Choose a staff member to edit:\n\n"
+            
+            # Create staff buttons for this day
+            keyboard = []
+            for staff_name, staff_data in editable_schedules.items():
+                schedule = staff_data.get('schedule', {})
+                day_schedule = schedule.get(day, {})
+                
+                if day_schedule.get('is_working', False):
+                    start_time = day_schedule.get('start_time', '')
+                    end_time = day_schedule.get('end_time', '')
+                    time_display = f"{start_time}-{end_time}" if start_time and end_time else "Working"
+                else:
+                    time_display = "Off"
+                
+                button_text = f"{staff_name}: {time_display}"
+                keyboard.append([InlineKeyboardButton(button_text, callback_data=f"edit_staff_{staff_name}")])
+            
+            # Add navigation buttons
+            keyboard.append([
+                InlineKeyboardButton("🔙 Back to Days", callback_data="copy_and_edit" if edit_mode == 'previous_week' else "copy_current_and_edit"),
+                InlineKeyboardButton("✅ Finish Editing", callback_data="finish_editing")
+            ])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
+        except Exception as e:
+            logger.error(f"Error showing staff selection: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error showing staff selection: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+
+    async def show_edit_staff_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE, staff_name: str):
+        """Show editing options for a specific staff member"""
+        try:
+            editable_schedules = context.user_data.get('editable_schedules', {})
+            week_dates = context.user_data.get('edit_week_dates', {})
+            day = context.user_data.get('edit_current_day', '')
+            edit_mode = context.user_data.get('edit_mode', 'previous_week')
+            
+            # Store current staff being edited
+            context.user_data['edit_current_staff'] = staff_name
+            
+            mode_text = "Previous Week" if edit_mode == 'previous_week' else "Current Week"
+            date = week_dates.get(day)
+            date_str = date.strftime('%B %d, %Y') if date else day
+            
+            # Get current schedule for this staff and day
+            staff_data = editable_schedules.get(staff_name, {})
+            schedule = staff_data.get('schedule', {})
+            day_schedule = schedule.get(day, {})
+            
+            current_time = ""
+            if day_schedule.get('is_working', False):
+                start_time = day_schedule.get('start_time', '')
+                end_time = day_schedule.get('end_time', '')
+                current_time = f"{start_time}-{end_time}" if start_time and end_time else "Working"
+            else:
+                current_time = "Off"
+            
+            text = f"✏️ *Edit {mode_text} Schedules*\n\n"
+            text += f"*{staff_name}'s schedule for {day}*\n"
+            text += f"*{date_str}*\n\n"
+            text += f"*Current:* {current_time}\n\n"
+            text += "What would you like to do?"
+            
+            keyboard = [
+                [InlineKeyboardButton("🚫 Set Off", callback_data=f"set_off_{staff_name}")],
+                [InlineKeyboardButton("⏰ Edit Times", callback_data=f"edit_times_{staff_name}")],
+                [InlineKeyboardButton("✅ Keep Current", callback_data="save_and_continue")],
+                [
+                    InlineKeyboardButton("🔙 Back to Staff", callback_data=f"edit_day_{day}"),
+                    InlineKeyboardButton("🏠 Back to Days", callback_data="copy_and_edit" if edit_mode == 'previous_week' else "copy_current_and_edit")
+                ]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
+        except Exception as e:
+            logger.error(f"Error showing staff schedule edit: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error showing staff schedule edit: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+
+    async def set_staff_off(self, update: Update, context: ContextTypes.DEFAULT_TYPE, staff_name: str):
+        """Set a staff member as off for the current day"""
+        try:
+            editable_schedules = context.user_data.get('editable_schedules', {})
+            day = context.user_data.get('edit_current_day', '')
+            
+            # Update the schedule to set as off
+            if staff_name in editable_schedules:
+                schedule = editable_schedules[staff_name].get('schedule', {})
+                schedule[day] = {
+                    'is_working': False,
+                    'start_time': '',
+                    'end_time': '',
+                    'date': context.user_data.get('edit_week_dates', {}).get(day)
+                }
+                editable_schedules[staff_name]['schedule'] = schedule
+                context.user_data['editable_schedules'] = editable_schedules
+            
+            # Show confirmation and continue options
+            text = f"✅ *Updated Successfully*\n\n"
+            text += f"*{staff_name}* is now set as **Off** for {day}\n\n"
+            text += "What would you like to do next?"
+            
+            keyboard = [
+                [InlineKeyboardButton("✏️ Edit Another Staff", callback_data=f"edit_day_{day}")],
+                [InlineKeyboardButton("📅 Choose Different Day", callback_data="copy_and_edit" if context.user_data.get('edit_mode') == 'previous_week' else "copy_current_and_edit")],
+                [InlineKeyboardButton("✅ Finish Editing", callback_data="finish_editing")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
+        except Exception as e:
+            logger.error(f"Error setting staff off: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error setting staff off: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+
+    async def edit_staff_times(self, update: Update, context: ContextTypes.DEFAULT_TYPE, staff_name: str):
+        """Show time editing interface for a staff member"""
+        try:
+            day = context.user_data.get('edit_current_day', '')
+            week_dates = context.user_data.get('edit_week_dates', {})
+            date = week_dates.get(day)
+            date_str = date.strftime('%B %d, %Y') if date else day
+            
+            text = f"⏰ *Edit Times for {staff_name}*\n\n"
+            text += f"*{day} - {date_str}*\n\n"
+            text += "Please send the new schedule time in the format:\n"
+            text += "`HH:MM-HH:MM`\n\n"
+            text += "*Examples:*\n"
+            text += "• `09:00-17:00` (9 AM to 5 PM)\n"
+            text += "• `13:00-21:00` (1 PM to 9 PM)\n"
+            text += "• `10:30-18:30` (10:30 AM to 6:30 PM)\n\n"
+            text += "Or send `off` to set as off day."
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Options", callback_data=f"edit_staff_{staff_name}")],
+                [InlineKeyboardButton("🚫 Cancel", callback_data="bulk_schedule")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
+            # Set state to wait for time input
+            context.user_data['waiting_for_time_input'] = True
+            context.user_data['time_input_staff'] = staff_name
+            
+        except Exception as e:
+            logger.error(f"Error showing time edit interface: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error showing time edit interface: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+
+    async def save_and_continue_edit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Save current changes and continue editing"""
+        try:
+            day = context.user_data.get('edit_current_day', '')
+            
+            text = f"✅ *Changes Saved*\n\n"
+            text += f"Continue editing {day} or choose a different day."
+            
+            keyboard = [
+                [InlineKeyboardButton("✏️ Edit Another Staff", callback_data=f"edit_day_{day}")],
+                [InlineKeyboardButton("📅 Choose Different Day", callback_data="copy_and_edit" if context.user_data.get('edit_mode') == 'previous_week' else "copy_current_and_edit")],
+                [InlineKeyboardButton("✅ Finish Editing", callback_data="finish_editing")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
+        except Exception as e:
+            logger.error(f"Error in save and continue: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error saving changes: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+
+    async def finish_editing(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Finish editing and save all schedules to target week"""
+        try:
+            editable_schedules = context.user_data.get('editable_schedules', {})
+            week_dates = context.user_data.get('edit_week_dates', {})
+            week_start = context.user_data.get('edit_week_start')
+            edit_mode = context.user_data.get('edit_mode', 'previous_week')
+            
+            if not editable_schedules or not week_dates:
+                await update.callback_query.edit_message_text(
+                    "❌ Error: No schedule data to save.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+                )
+                return MAIN_MENU
+            
+            # Save all schedules to the target week
+            saved_count = 0
+            failed_saves = []
+            
+            for staff_name, staff_data in editable_schedules.items():
+                staff_id = staff_data.get('staff_id')
+                schedule = staff_data.get('schedule', {})
+                
+                for day, day_schedule in schedule.items():
+                    try:
+                        is_working = day_schedule.get('is_working', False)
+                        start_time = day_schedule.get('start_time', '')
+                        end_time = day_schedule.get('end_time', '')
+                        schedule_date = day_schedule.get('date')
+                        
+                        if schedule_date:
+                            self.db.save_schedule(staff_id, day, is_working, start_time, end_time, schedule_date)
+                            saved_count += 1
+                    except Exception as e:
+                        failed_saves.append((staff_name, str(e)))
+            
+            # Show results
+            if not failed_saves:
+                text = f"✅ *Mirroring Complete!*\n\n"
+                text += f"Successfully saved {saved_count} schedules to the target week.\n\n"
+                text += f"All edited schedules have been applied."
+                
+                keyboard = [
+                    [InlineKeyboardButton("📊 View Schedules", callback_data="view_schedules")],
+                    [InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")]
+                ]
+            else:
+                text = f"⚠️ *Mirroring Partially Complete*\n\n"
+                text += f"Saved {saved_count} schedules successfully.\n"
+                text += f"Failed to save {len(failed_saves)} schedules:\n\n"
+                
+                for staff_name, error in failed_saves[:3]:
+                    text += f"• {staff_name}: {error}\n"
+                
+                if len(failed_saves) > 3:
+                    text += f"• ... and {len(failed_saves) - 3} more\n"
+                
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Try Again", callback_data="finish_editing")],
+                    [InlineKeyboardButton("🏠 Main Menu", callback_data="back_main")]
+                ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            
+            # Clear editing state
+            context.user_data.pop('edit_mode', None)
+            context.user_data.pop('editable_schedules', None)
+            context.user_data.pop('edit_week_dates', None)
+            context.user_data.pop('edit_week_start', None)
+            context.user_data.pop('edit_current_day', None)
+            context.user_data.pop('edit_current_staff', None)
+            context.user_data.pop('waiting_for_time_input', None)
+            context.user_data.pop('time_input_staff', None)
+            
+            return MAIN_MENU
+            
+        except Exception as e:
+            logger.error(f"Error finishing editing: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error finishing editing: {str(e)}",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
             )
             return MAIN_MENU
