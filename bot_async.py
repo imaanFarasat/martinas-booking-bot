@@ -3960,11 +3960,13 @@ class StaffSchedulerBot:
     async def show_bulk_schedule_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show bulk scheduling options"""
         text = "🔄 *Bulk Scheduling Options*\n\n"
-        text += "Choose how you want to schedule your team:"
+        text += "Choose how you want to schedule your team:\n\n"
+        text += "• *Mirror Previous Week*: Copy schedules from previous week\n"
+        text += "• *Mirror Current Week*: Copy current week to next week"
         
         keyboard = [
-            [InlineKeyboardButton("📋 Copy from Previous Week", callback_data="copy_previous_week")],
-            [InlineKeyboardButton("🔄 Mirror Current Week to Next", callback_data="copy_current_week_to_next")],
+            [InlineKeyboardButton("🔄 Mirror Previous Week", callback_data="mirror_previous_week")],
+            [InlineKeyboardButton("🔄 Mirror Current Week", callback_data="mirror_current_week")],
             [InlineKeyboardButton("📅 Schedule All Staff (Fresh)", callback_data="schedule_all_fresh")],
             [InlineKeyboardButton("📊 Apply Template", callback_data="apply_template")],
             [InlineKeyboardButton("⚡ Quick Schedule (Same Times)", callback_data="quick_schedule")],
@@ -3975,15 +3977,27 @@ class StaffSchedulerBot:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         return MAIN_MENU
     
-    async def copy_previous_week(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Copy schedules from previous week"""
+    async def mirror_previous_week(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Mirror schedules from previous week (or current/next week if no previous week data exists)"""
         try:
             # Calculate current and previous week dates
             week_dates, week_start = self.calculate_week_dates()
             date_range = self.format_date_range(week_dates)
             
-            # Get previous week's schedules
+            # First try to get previous week's schedules
             previous_schedules = self.db.get_previous_week_schedules(week_start)
+            source_week_type = "previous week"
+            
+            # If no previous week schedules, try current week schedules
+            if not previous_schedules:
+                previous_schedules = self.db.get_current_week_schedules(week_start)
+                source_week_type = "current week"
+            
+            # If still no schedules, try next week schedules
+            if not previous_schedules:
+                next_week_start = week_start + timedelta(days=7)
+                previous_schedules = self.db.get_current_week_schedules(next_week_start)
+                source_week_type = "next week"
             
             if not previous_schedules:
                 text = "❌ *No Previous Week Found*\n\n"
@@ -4021,8 +4035,9 @@ class StaffSchedulerBot:
             context.user_data['week_start'] = week_start
             
             # Show preview
-            text = f"📋 *Preview: Copy from Previous Week*\n\n"
-            text += f"*Target Week:* {date_range}\n\n"
+            text = f"🔄 *Preview: Mirror from {source_week_type.title()}*\n\n"
+            text += f"*Target Week:* {date_range}\n"
+            text += f"*Source:* {source_week_type}\n\n"
             text += f"Found schedules for {len(staff_schedules)} staff members:\n\n"
             
             for staff_name, data in staff_schedules.items():
@@ -4031,11 +4046,11 @@ class StaffSchedulerBot:
                 off_days = 7 - working_days
                 text += f"*{staff_name}:* {working_days} working, {off_days} off\n"
             
-            text += f"\nWould you like to proceed with copying these schedules?"
+            text += f"\nWould you like to proceed with mirroring these schedules?"
             
             keyboard = [
-                [InlineKeyboardButton("✅ Copy & Save All", callback_data="confirm_copy_previous")],
-                [InlineKeyboardButton("✏️ Copy & Edit First", callback_data="copy_and_edit")],
+                [InlineKeyboardButton("✅ Mirror & Save All", callback_data="confirm_copy_previous")],
+                [InlineKeyboardButton("✏️ Mirror & Edit First", callback_data="copy_and_edit")],
                 [InlineKeyboardButton("🔙 Back to Bulk Menu", callback_data="bulk_schedule")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -4043,9 +4058,9 @@ class StaffSchedulerBot:
             return MAIN_MENU
             
         except Exception as e:
-            logger.error(f"Error copying previous week: {e}")
+            logger.error(f"Error mirroring previous week: {e}")
             await update.callback_query.edit_message_text(
-                f"❌ Error accessing previous week data: {str(e)}\n\nPlease try again or contact administrator.",
+                f"❌ Error accessing schedule data: {str(e)}\n\nPlease try again or contact administrator.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
             )
             return MAIN_MENU
@@ -4065,7 +4080,7 @@ class StaffSchedulerBot:
             
             # Show progress message
             await update.callback_query.edit_message_text(
-                "⏳ *Copying Schedules...*\n\nPlease wait while we copy the previous week's schedules.",
+                "⏳ *Mirroring Schedules...*\n\nPlease wait while we mirror the schedules.",
                 parse_mode=ParseMode.MARKDOWN
             )
             
@@ -4116,7 +4131,7 @@ class StaffSchedulerBot:
                         text += f"... and {len(warnings)-3} more\n"
                     text += "\n"
                 
-                text += f"All schedules have been copied from the previous week!"
+                text += f"All schedules have been mirrored successfully!"
                 
                 keyboard = [
                     [InlineKeyboardButton("👀 View Schedules", callback_data="view_current_schedules")],
@@ -4145,7 +4160,7 @@ class StaffSchedulerBot:
             return MAIN_MENU
             
         except Exception as e:
-            logger.error(f"Error confirming copy previous: {e}")
+            logger.error(f"Error confirming mirror previous: {e}")
             await update.callback_query.edit_message_text(
                 f"❌ Error saving schedules: {str(e)}\n\nPlease try again or contact administrator.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
@@ -4319,11 +4334,11 @@ class StaffSchedulerBot:
         if query.data == "bulk_schedule":
             await self.show_bulk_schedule_menu(update, context)
             return BULK_SCHEDULE
-        elif query.data == "copy_previous_week":
-            await self.copy_previous_week(update, context)
+        elif query.data == "mirror_previous_week":
+            await self.mirror_previous_week(update, context)
             return BULK_SCHEDULE
-        elif query.data == "copy_current_week_to_next":
-            await self.copy_current_week_to_next(update, context)
+        elif query.data == "mirror_current_week":
+            await self.mirror_current_week(update, context)
             return BULK_SCHEDULE
         elif query.data == "confirm_copy_previous":
             await self.confirm_copy_previous(update, context)
@@ -4661,8 +4676,8 @@ class StaffSchedulerBot:
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
         return WEEK_SELECTION
 
-    async def copy_current_week_to_next(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Copy schedules from current week to next week"""
+    async def mirror_current_week(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Mirror schedules from current week to next week"""
         try:
             # Calculate current week dates
             current_week_dates, current_week_start = self.calculate_week_dates()
@@ -4715,7 +4730,7 @@ class StaffSchedulerBot:
             context.user_data['week_start'] = next_week_start
             
             # Show preview
-            text = f"📋 *Preview: Copy Current Week to Next Week*\n\n"
+            text = f"🔄 *Preview: Mirror Current Week to Next Week*\n\n"
             text += f"*From Week:* {current_date_range}\n"
             text += f"*To Week:* {next_date_range}\n\n"
             text += f"Found schedules for {len(staff_schedules)} staff members:\n\n"
@@ -4726,11 +4741,11 @@ class StaffSchedulerBot:
                 off_days = 7 - working_days
                 text += f"*{staff_name}:* {working_days} working, {off_days} off\n"
             
-            text += f"\nWould you like to proceed with copying these schedules to next week?"
+            text += f"\nWould you like to proceed with mirroring these schedules to next week?"
             
             keyboard = [
-                [InlineKeyboardButton("✅ Copy & Save All", callback_data="confirm_copy_current_to_next")],
-                [InlineKeyboardButton("✏️ Copy & Edit First", callback_data="copy_current_and_edit")],
+                [InlineKeyboardButton("✅ Mirror & Save All", callback_data="confirm_copy_current_to_next")],
+                [InlineKeyboardButton("✏️ Mirror & Edit First", callback_data="copy_current_and_edit")],
                 [InlineKeyboardButton("🔙 Back to Bulk Menu", callback_data="bulk_schedule")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -4760,7 +4775,7 @@ class StaffSchedulerBot:
             
             # Show progress message
             await update.callback_query.edit_message_text(
-                "⏳ *Copying Schedules to Next Week...*\n\nPlease wait while we copy the current week's schedules.",
+                "⏳ *Mirroring Schedules to Next Week...*\n\nPlease wait while we mirror the current week's schedules.",
                 parse_mode=ParseMode.MARKDOWN
             )
             
@@ -4805,7 +4820,7 @@ class StaffSchedulerBot:
                         text += f"• ... and {len(conflicts) - 3} more\n"
                     text += "\n"
                 
-                text += "✅ All schedules have been copied to next week successfully!"
+                text += "✅ All schedules have been mirrored to next week successfully!"
                 
                 keyboard = [
                     [InlineKeyboardButton("📋 View Next Week Schedules", callback_data="view_schedules")],
@@ -4817,7 +4832,7 @@ class StaffSchedulerBot:
                 return MAIN_MENU
             else:
                 # Show error message
-                text = "❌ *Error Copying Schedules*\n\n"
+                text = "❌ *Error Mirroring Schedules*\n\n"
                 text += f"Failed to save {len(failed_saves)} schedules:\n\n"
                 
                 for staff_name, error in failed_saves[:5]:  # Show first 5 errors
@@ -4837,9 +4852,9 @@ class StaffSchedulerBot:
                 return MAIN_MENU
                 
         except Exception as e:
-            logger.error(f"Error confirming copy current to next: {e}")
+            logger.error(f"Error confirming mirror current to next: {e}")
             await update.callback_query.edit_message_text(
-                f"❌ Error copying schedules: {str(e)}\n\nPlease try again or contact administrator.",
+                f"❌ Error mirroring schedules: {str(e)}\n\nPlease try again or contact administrator.",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
             )
             return MAIN_MENU
