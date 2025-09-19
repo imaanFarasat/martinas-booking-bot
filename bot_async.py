@@ -31,6 +31,13 @@ class StaffSchedulerBot:
         self.pdf_gen = PDFGenerator()
         self.user_states = {}  # Store user conversation states
         self.toronto_tz = pytz.timezone('America/Toronto')
+        
+        # Initialize production data if needed
+        try:
+            from initialize_production_data import initialize_production_data
+            initialize_production_data()
+        except Exception as e:
+            logger.warning(f"Could not initialize production data: {e}")
     
     def is_admin(self, user_id):
         """Check if user is admin"""
