@@ -5241,8 +5241,19 @@ class StaffSchedulerBot:
                     editable_schedules[staff_name]['schedule'] = schedule
                     context.user_data['editable_schedules'] = editable_schedules
             
-            # Show updated time picker
-            await self.edit_staff_times(update, context, staff_name)
+            # Show confirmation and return to staff selection
+            text = f"✅ *Start Time Updated*\n\n"
+            text += f"*{staff_name}* start time set to **{time}** for {day}\n\n"
+            text += "Continue editing staff for this day:"
+            
+            keyboard = [
+                [InlineKeyboardButton("✏️ Edit Another Staff", callback_data=f"edit_day_{day}")],
+                [InlineKeyboardButton("📅 Choose Different Day", callback_data="copy_and_edit" if context.user_data.get('edit_mode') == 'previous_week' else "copy_current_and_edit")],
+                [InlineKeyboardButton("✅ Finish Editing", callback_data="finish_editing")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
             
         except Exception as e:
             logger.error(f"Error handling edit start time: {e}")
@@ -5267,8 +5278,19 @@ class StaffSchedulerBot:
                     editable_schedules[staff_name]['schedule'] = schedule
                     context.user_data['editable_schedules'] = editable_schedules
             
-            # Show updated time picker
-            await self.edit_staff_times(update, context, staff_name)
+            # Show confirmation and return to staff selection
+            text = f"✅ *End Time Updated*\n\n"
+            text += f"*{staff_name}* end time set to **{time}** for {day}\n\n"
+            text += "Continue editing staff for this day:"
+            
+            keyboard = [
+                [InlineKeyboardButton("✏️ Edit Another Staff", callback_data=f"edit_day_{day}")],
+                [InlineKeyboardButton("📅 Choose Different Day", callback_data="copy_and_edit" if context.user_data.get('edit_mode') == 'previous_week' else "copy_current_and_edit")],
+                [InlineKeyboardButton("✅ Finish Editing", callback_data="finish_editing")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
             
         except Exception as e:
             logger.error(f"Error handling edit end time: {e}")
