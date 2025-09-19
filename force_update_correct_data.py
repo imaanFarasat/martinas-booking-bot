@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-Initialize production database with current week data
-This script will be called when the bot starts to ensure data is available
+Force update the database with the correct current week data
 """
 
 import sys
@@ -14,12 +13,13 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config import DATABASE_PATH, DAYS_OF_WEEK
 
-def initialize_production_data():
-    """Initialize the production database with current week data"""
-    print("🚀 Initializing production database with current week data...")
+def force_update_correct_data():
+    """Force update the database with the correct current week data"""
+    print("🔄 FORCE UPDATING DATABASE WITH CORRECT DATA")
+    print("=" * 60)
     
-    # Current week data (September 14-20, 2025) - CORRECTED VERSION
-    current_week_data = {
+    # CORRECT current week data (September 14-20, 2025)
+    correct_data = {
         'Asal': {
             'Sunday': '13:00-21:00',
             'Monday': '13:00-21:00',
@@ -107,8 +107,9 @@ def initialize_production_data():
     try:
         cursor.execute("BEGIN TRANSACTION")
         
-        # Force delete existing data and recreate with correct data
-        print(f"🗑️ Deleting any existing schedules for week: {week_start} to {week_dates['Saturday']}")
+        print(f"🗑️ Deleting all existing schedules for week: {week_start} to {week_dates['Saturday']}")
+        
+        # Delete all existing schedules for this week
         cursor.execute("""
             DELETE FROM schedules 
             WHERE schedule_date BETWEEN ? AND ?
@@ -117,24 +118,20 @@ def initialize_production_data():
         deleted_count = cursor.rowcount
         print(f"   ✅ Deleted {deleted_count} existing schedules")
         
-        print(f"📅 Initializing data for week: {week_start} to {week_dates['Saturday']}")
+        print(f"📝 Adding correct schedules...")
         
-        # Add staff members and schedules
-        for staff_name, schedule in current_week_data.items():
-            # Add staff member if not exists
+        # Add correct schedules for each staff member
+        for staff_name, schedule in correct_data.items():
+            # Get staff ID
             cursor.execute('SELECT id FROM staff WHERE name = ?', (staff_name,))
             result = cursor.fetchone()
             
-            if result:
-                staff_id = result[0]
-                print(f"   ℹ️ Staff {staff_name} already exists (ID: {staff_id})")
-            else:
-                cursor.execute('''
-                    INSERT INTO staff (name, created_at)
-                    VALUES (?, datetime('now'))
-                ''', (staff_name,))
-                staff_id = cursor.lastrowid
-                print(f"   ✅ Added staff {staff_name} (ID: {staff_id})")
+            if not result:
+                print(f"   ❌ Staff {staff_name} not found!")
+                continue
+                
+            staff_id = result[0]
+            print(f"   📝 Updating {staff_name} (ID: {staff_id})")
             
             # Add schedules for this staff member
             for day, time_slot in schedule.items():
@@ -148,20 +145,14 @@ def initialize_production_data():
                     is_working = 1
                     start_time, end_time = time_slot.split('-')
                 
-                # Delete any existing schedule for this staff and day
-                cursor.execute('''
-                    DELETE FROM schedules 
-                    WHERE staff_id = ? AND day_of_week = ?
-                ''', (staff_id, day))
-                
-                # Insert the new schedule
+                # Insert the correct schedule
                 cursor.execute('''
                     INSERT INTO schedules (staff_id, day_of_week, is_working, start_time, end_time, schedule_date, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                 ''', (staff_id, day, is_working, start_time, end_time, schedule_date.strftime('%Y-%m-%d')))
         
         cursor.execute("COMMIT")
-        print(f"✅ Successfully initialized production database!")
+        print(f"✅ Successfully updated database with correct data!")
         
         # Verify the data
         cursor.execute("""
@@ -170,14 +161,30 @@ def initialize_production_data():
         """, (week_start.strftime('%Y-%m-%d'), week_dates['Saturday'].strftime('%Y-%m-%d')))
         
         count = cursor.fetchone()[0]
-        print(f"📊 Total schedules added: {count}")
+        print(f"📊 Total schedules now in database: {count}")
+        
+        # Show sample of updated data
+        cursor.execute("""
+            SELECT s.name, sch.day_of_week, sch.schedule_date, sch.is_working, sch.start_time, sch.end_time
+            FROM staff s
+            JOIN schedules sch ON s.id = sch.staff_id
+            WHERE sch.schedule_date BETWEEN ? AND ?
+            ORDER BY s.name, sch.day_of_week
+            LIMIT 10
+        """, (week_start.strftime('%Y-%m-%d'), week_dates['Saturday'].strftime('%Y-%m-%d')))
+        
+        sample_schedules = cursor.fetchall()
+        print(f"\n📋 Sample of updated schedules:")
+        for staff_name, day, date, working, start, end in sample_schedules:
+            time_display = f"{start}-{end}" if working and start and end else "Off"
+            print(f"   {staff_name} - {day} {date}: {time_display}")
         
     except Exception as e:
         cursor.execute("ROLLBACK")
-        print(f"❌ Error initializing data: {e}")
+        print(f"❌ Error updating data: {e}")
         raise
     finally:
         conn.close()
 
 if __name__ == "__main__":
-    initialize_production_data()
+    force_update_correct_data()
