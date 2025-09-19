@@ -6,13 +6,13 @@ This script will be called when the bot starts to ensure data is available
 
 import sys
 import os
-import sqlite3
 from datetime import datetime, timedelta
 
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from config import DATABASE_PATH, DAYS_OF_WEEK
+from config import DAYS_OF_WEEK
+from database_factory import get_database_manager
 
 def initialize_production_data():
     """Initialize the production database with current week data"""
@@ -101,20 +101,39 @@ def initialize_production_data():
     for i, day in enumerate(DAYS_OF_WEEK):
         week_dates[day] = week_start + timedelta(days=i)
     
-    conn = sqlite3.connect(DATABASE_PATH)
-    cursor = conn.cursor()
+    # Get database manager (works with MySQL, PostgreSQL, or SQLite)
+    db = get_database_manager()
     
     try:
-        cursor.execute("BEGIN TRANSACTION")
-        
         # Force delete existing data and recreate with correct data
         print(f"🗑️ Deleting any existing schedules for week: {week_start} to {week_dates['Saturday']}")
-        cursor.execute("""
-            DELETE FROM schedules 
-            WHERE schedule_date BETWEEN ? AND ?
-        """, (week_start.strftime('%Y-%m-%d'), week_dates['Saturday'].strftime('%Y-%m-%d')))
         
-        deleted_count = cursor.rowcount
+        # Delete existing schedules for this week
+        deleted_count = 0
+        for day in DAYS_OF_WEEK:
+            schedule_date = week_dates[day]
+            # Use the database manager's delete method
+            try:
+                # Get all schedules for this date and delete them
+                all_schedules = db.get_all_schedules()
+                for schedule in all_schedules:
+                    if len(schedule) >= 3 and schedule[2]:
+                        try:
+                            schedule_date_str = str(schedule[2])
+                            if hasattr(schedule[2], 'date'):
+                                schedule_date_obj = schedule[2].date()
+                            else:
+                                schedule_date_obj = datetime.strptime(schedule_date_str, '%Y-%m-%d').date()
+                            
+                            if schedule_date_obj == schedule_date:
+                                # Delete this schedule
+                                db.delete_schedule(schedule[1], schedule[0])  # staff_id, day_of_week
+                                deleted_count += 1
+                        except:
+                            continue
+            except:
+                continue
+        
         print(f"   ✅ Deleted {deleted_count} existing schedules")
         
         print(f"📅 Initializing data for week: {week_start} to {week_dates['Saturday']}")
@@ -122,18 +141,25 @@ def initialize_production_data():
         # Add staff members and schedules
         for staff_name, schedule in current_week_data.items():
             # Add staff member if not exists
-            cursor.execute('SELECT id FROM staff WHERE name = ?', (staff_name,))
-            result = cursor.fetchone()
+            all_staff = db.get_all_staff()
+            staff_id = None
             
-            if result:
-                staff_id = result[0]
+            for sid, sname in all_staff:
+                if sname == staff_name:
+                    staff_id = sid
+                    break
+            
+            if staff_id:
                 print(f"   ℹ️ Staff {staff_name} already exists (ID: {staff_id})")
             else:
-                cursor.execute('''
-                    INSERT INTO staff (name, created_at)
-                    VALUES (?, datetime('now'))
-                ''', (staff_name,))
-                staff_id = cursor.lastrowid
+                # Add new staff member
+                db.add_staff(staff_name)
+                # Get the new staff ID
+                all_staff = db.get_all_staff()
+                for sid, sname in all_staff:
+                    if sname == staff_name:
+                        staff_id = sid
+                        break
                 print(f"   ✅ Added staff {staff_name} (ID: {staff_id})")
             
             # Add schedules for this staff member
@@ -141,43 +167,43 @@ def initialize_production_data():
                 schedule_date = week_dates[day]
                 
                 if time_slot == 'Off':
-                    is_working = 0
+                    is_working = False
                     start_time = ''
                     end_time = ''
                 else:
-                    is_working = 1
+                    is_working = True
                     start_time, end_time = time_slot.split('-')
                 
-                # Delete any existing schedule for this staff and day
-                cursor.execute('''
-                    DELETE FROM schedules 
-                    WHERE staff_id = ? AND day_of_week = ?
-                ''', (staff_id, day))
-                
-                # Insert the new schedule
-                cursor.execute('''
-                    INSERT INTO schedules (staff_id, day_of_week, is_working, start_time, end_time, schedule_date, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-                ''', (staff_id, day, is_working, start_time, end_time, schedule_date.strftime('%Y-%m-%d')))
+                # Add the schedule using the database manager
+                try:
+                    db.save_schedule(staff_id, day, is_working, start_time, end_time, schedule_date)
+                except Exception as e:
+                    print(f"   ⚠️ Could not add schedule for {staff_name} on {day}: {e}")
         
-        cursor.execute("COMMIT")
         print(f"✅ Successfully initialized production database!")
         
         # Verify the data
-        cursor.execute("""
-            SELECT COUNT(*) FROM schedules 
-            WHERE schedule_date BETWEEN ? AND ?
-        """, (week_start.strftime('%Y-%m-%d'), week_dates['Saturday'].strftime('%Y-%m-%d')))
+        all_schedules = db.get_all_schedules()
+        count = 0
+        for schedule in all_schedules:
+            if len(schedule) >= 3 and schedule[2]:
+                try:
+                    schedule_date_str = str(schedule[2])
+                    if hasattr(schedule[2], 'date'):
+                        schedule_date_obj = schedule[2].date()
+                    else:
+                        schedule_date_obj = datetime.strptime(schedule_date_str, '%Y-%m-%d').date()
+                    
+                    if week_start <= schedule_date_obj <= week_dates['Saturday']:
+                        count += 1
+                except:
+                    continue
         
-        count = cursor.fetchone()[0]
         print(f"📊 Total schedules added: {count}")
         
     except Exception as e:
-        cursor.execute("ROLLBACK")
         print(f"❌ Error initializing data: {e}")
         raise
-    finally:
-        conn.close()
 
 if __name__ == "__main__":
     initialize_production_data()
