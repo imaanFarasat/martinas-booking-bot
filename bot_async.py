@@ -4383,6 +4383,10 @@ class StaffSchedulerBot:
             time = query.data.replace("edit_end_", "")
             await self.handle_edit_end_time(update, context, time)
             return BULK_SCHEDULE
+        elif query.data.startswith("confirm_times_"):
+            staff_name = query.data.replace("confirm_times_", "")
+            await self.confirm_times_and_continue(update, context, staff_name)
+            return BULK_SCHEDULE
         elif query.data == "save_and_continue":
             await self.save_and_continue_edit(update, context)
             return BULK_SCHEDULE
@@ -5211,9 +5215,10 @@ class StaffSchedulerBot:
             
             # Action buttons
             keyboard.append([
-                InlineKeyboardButton("🔙 Back to Options", callback_data=f"edit_staff_{staff_name}"),
-                InlineKeyboardButton("🚫 Cancel", callback_data="bulk_schedule")
+                InlineKeyboardButton("✅ Confirm Times", callback_data=f"confirm_times_{staff_name}"),
+                InlineKeyboardButton("🔙 Back to Options", callback_data=f"edit_staff_{staff_name}")
             ])
+            keyboard.append([InlineKeyboardButton("🚫 Cancel", callback_data="bulk_schedule")])
             
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
@@ -5241,19 +5246,8 @@ class StaffSchedulerBot:
                     editable_schedules[staff_name]['schedule'] = schedule
                     context.user_data['editable_schedules'] = editable_schedules
             
-            # Show confirmation and return to staff selection
-            text = f"✅ *Start Time Updated*\n\n"
-            text += f"*{staff_name}* start time set to **{time}** for {day}\n\n"
-            text += "Continue editing staff for this day:"
-            
-            keyboard = [
-                [InlineKeyboardButton("✏️ Edit Another Staff", callback_data=f"edit_day_{day}")],
-                [InlineKeyboardButton("📅 Choose Different Day", callback_data="copy_and_edit" if context.user_data.get('edit_mode') == 'previous_week' else "copy_current_and_edit")],
-                [InlineKeyboardButton("✅ Finish Editing", callback_data="finish_editing")]
-            ]
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            # Show updated time picker with new start time
+            await self.edit_staff_times(update, context, staff_name)
             
         except Exception as e:
             logger.error(f"Error handling edit start time: {e}")
@@ -5278,9 +5272,33 @@ class StaffSchedulerBot:
                     editable_schedules[staff_name]['schedule'] = schedule
                     context.user_data['editable_schedules'] = editable_schedules
             
-            # Show confirmation and return to staff selection
-            text = f"✅ *End Time Updated*\n\n"
-            text += f"*{staff_name}* end time set to **{time}** for {day}\n\n"
+            # Show updated time picker with new end time
+            await self.edit_staff_times(update, context, staff_name)
+            
+        except Exception as e:
+            logger.error(f"Error handling edit end time: {e}")
+            await update.callback_query.edit_message_text(
+                f"❌ Error updating end time: {str(e)}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
+            )
+
+    async def confirm_times_and_continue(self, update: Update, context: ContextTypes.DEFAULT_TYPE, staff_name: str):
+        """Confirm the selected times and show continue options"""
+        try:
+            day = context.user_data.get('edit_current_day', '')
+            editable_schedules = context.user_data.get('editable_schedules', {})
+            
+            # Get the current times
+            staff_data = editable_schedules.get(staff_name, {})
+            schedule = staff_data.get('schedule', {})
+            day_schedule = schedule.get(day, {})
+            
+            start_time = day_schedule.get('start_time', '')
+            end_time = day_schedule.get('end_time', '')
+            
+            text = f"✅ *Times Confirmed*\n\n"
+            text += f"*{staff_name}* schedule for {day}:\n"
+            text += f"**{start_time}-{end_time}**\n\n"
             text += "Continue editing staff for this day:"
             
             keyboard = [
@@ -5293,9 +5311,9 @@ class StaffSchedulerBot:
             await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
             
         except Exception as e:
-            logger.error(f"Error handling edit end time: {e}")
+            logger.error(f"Error confirming times: {e}")
             await update.callback_query.edit_message_text(
-                f"❌ Error updating end time: {str(e)}",
+                f"❌ Error confirming times: {str(e)}",
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bulk_schedule")]])
             )
 
